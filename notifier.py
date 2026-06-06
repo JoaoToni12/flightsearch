@@ -5,9 +5,12 @@ from __future__ import annotations
 import logging
 import os
 import smtplib
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formatdate, make_msgid
 from enum import Enum
 
 import requests
@@ -185,9 +188,11 @@ def build_tiered_email(
 ) -> tuple[str, str, str]:
     theme = THEMES[level]
     best = offers[0]
+    stamp = datetime.now(timezone.utc).strftime("%d/%m %H:%M UTC")
+    uid = uuid.uuid4().hex[:8]
     subject = (
-        f"{theme.emoji} {theme.label} — SAO→PAR a partir de "
-        f"{_format_brl(best.price_brl)} ({_format_date_br(best.departure_date)})"
+        f"{theme.emoji} [{stamp}] SAO→PAR só ida · "
+        f"{_format_brl(best.price_brl)} · {_format_date_br(best.departure_date)} · #{uid}"
     )
 
     cards_text = []
@@ -197,7 +202,8 @@ def build_tiered_email(
             f"{i}. {_format_brl(offer.price_brl)} — {_format_date_br(offer.departure_date)}{ideal}\n"
             f"   {offer.airline} | {offer.origin_airport or 'SAO'}→{offer.destination_airport or 'PAR'} | "
             f"{_format_duration(offer.duration_min)} | {offer.stops} esc.\n"
-            f"   Google Flights: {resolve_links(offer)['google_flights']}"
+            f"   Google Flights: {resolve_links(offer)['google_flights']}\n"
+            f"   Aviasales: {resolve_links(offer).get('aviasales', '—')}"
         )
 
     text = f"""{theme.emoji} {theme.label.upper()} — São Paulo → França (só ida)
@@ -222,6 +228,7 @@ flightsearch · monitor automático
     html = f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<!-- flightsearch-alert:{uid} -->
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f1f5f9;padding:24px 12px;">
     <tr><td align="center">
@@ -287,6 +294,7 @@ flightsearch · monitor automático
 def _send_resend(subject: str, text: str, html: str, to_email: str) -> None:
     api_key = os.environ["RESEND_API_KEY"]
     from_email = os.getenv("EMAIL_FROM", "onboarding@resend.dev")
+    ref_id = str(uuid.uuid4())
     resp = requests.post(
         "https://api.resend.com/emails",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -296,6 +304,10 @@ def _send_resend(subject: str, text: str, html: str, to_email: str) -> None:
             "subject": subject,
             "text": text,
             "html": html,
+            "headers": {
+                "X-Entity-Ref-ID": ref_id,
+                "X-Flightsearch-Alert": ref_id,
+            },
         },
         timeout=30,
     )
@@ -315,6 +327,9 @@ def _send_smtp(subject: str, text: str, html: str, to_email: str) -> None:
     msg["Subject"] = subject
     msg["From"] = from_email
     msg["To"] = to_email
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain="flightsearch.local")
+    msg["X-Entity-Ref-ID"] = str(uuid.uuid4())
     msg.attach(MIMEText(text, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
 
@@ -375,7 +390,7 @@ def send_status_email(
     alert_pending_reason: str,
 ) -> bool:
     """E-mail de teste/status com o mesmo layout, nível amarelo."""
-    reason = f"Teste de entrega — {alert_pending_reason}"
+    reason = f"[TESTE] Verificação de entrega — {alert_pending_reason}"
     return send_tiered_alert(
         AlertLevel.YELLOW,
         offers,

@@ -7,21 +7,13 @@ import os
 
 import requests
 
-from config import CURRENCY, DESTINATION, LOCALE, MARKET, ORIGIN, TRAVELPAYOUTS_ENABLED, google_flights_link
+from config import CURRENCY, DESTINATION, LOCALE, MARKET, ORIGIN, TRAVELPAYOUTS_ENABLED
+from links import aviasales_link
 from models import FlightOffer
 
 logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
-AVIASALES_BASE = "https://www.aviasales.com.br"
-
-
-def _build_link(api_link: str, departure_date: str) -> str:
-    if api_link.startswith("http"):
-        return api_link
-    if api_link.startswith("/"):
-        return f"{AVIASALES_BASE}{api_link}"
-    return google_flights_link(departure_date)
 
 
 def fetch_travelpayouts_offers(departure_dates: list[str]) -> list[FlightOffer]:
@@ -71,7 +63,11 @@ def fetch_travelpayouts_offers(departure_dates: list[str]) -> list[FlightOffer]:
             dep = (row.get("departure_at") or departure_date)[:10]
             transfers = int(row.get("transfers") or 0)
             duration = row.get("duration_to") or row.get("duration")
-            link = _build_link(row.get("link") or "", dep)
+            link = aviasales_link(
+                dep,
+                row.get("origin_airport") or "",
+                row.get("destination_airport") or "",
+            )
 
             offers.append(
                 FlightOffer(

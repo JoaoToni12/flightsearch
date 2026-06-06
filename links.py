@@ -1,11 +1,23 @@
-"""Construção de URLs de busca — separadas do link da fonte de dados."""
+"""Construção de URLs de busca — sempre só ida, sem parâmetros expirados."""
 
 from __future__ import annotations
 
-from urllib.parse import quote
+import os
+from urllib.parse import quote, urlencode
 
 from config import CURRENCY, DESTINATION, LOCALE, ORIGIN
 from models import FlightOffer
+
+AVIASALES_BASE = "https://www.aviasales.com.br"
+
+
+def _airports(origin_airport: str, destination_airport: str) -> tuple[str, str]:
+    return (origin_airport or ORIGIN).upper(), (destination_airport or DESTINATION).upper()
+
+
+def _ddmm(iso_date: str) -> str:
+    _, month, day = iso_date.split("-")
+    return f"{day}{month}"
 
 
 def google_flights_link(
@@ -13,17 +25,26 @@ def google_flights_link(
     origin_airport: str = "",
     destination_airport: str = "",
 ) -> str:
-    """URL estável do Google Flights (/search) com aeroportos reais quando disponíveis."""
-    origin = (origin_airport or ORIGIN).upper()
-    dest = (destination_airport or DESTINATION).upper()
+    """Só ida — formato natural language validado no Google Flights (?q=...oneway)."""
+    origin, dest = _airports(origin_airport, destination_airport)
     hl = LOCALE.replace("_", "-") if LOCALE else "pt-BR"
-    query = f"Flights from {origin} to {dest} on {departure_date}"
-    return (
-        "https://www.google.com/travel/flights/search"
-        f"?hl={quote(hl)}"
-        f"&curr={quote(CURRENCY)}"
-        f"&q={quote(query)}"
-    )
+    query = f"Flights from {origin} to {dest} on {departure_date} oneway"
+    params = urlencode({"q": query, "curr": CURRENCY, "hl": hl})
+    return f"https://www.google.com/travel/flights?{params}"
+
+
+def aviasales_link(
+    departure_date: str,
+    origin_airport: str = "",
+    destination_airport: str = "",
+) -> str:
+    """URL limpa Aviasales — sem tokens expirados da API cacheada."""
+    origin, dest = _airports(origin_airport, destination_airport)
+    segment = f"{origin}{_ddmm(departure_date)}{dest}1"
+    marker = os.getenv("TRAVELPAYOUTS_MARKER", "").strip()
+    if marker:
+        return f"{AVIASALES_BASE}/search/{segment}?marker={quote(marker)}"
+    return f"{AVIASALES_BASE}/search/{segment}"
 
 
 def skyscanner_link_for(
@@ -31,39 +52,36 @@ def skyscanner_link_for(
     origin_airport: str = "",
     destination_airport: str = "",
 ) -> str:
-    origin = (origin_airport or ORIGIN).lower()
-    dest = (destination_airport or DESTINATION).lower()
+    """Só ida (rtn=0)."""
+    origin, dest = _airports(origin_airport, destination_airport)
     yyyymmdd = departure_date.replace("-", "")
-    return (
-        "https://www.skyscanner.com.br/transporte/passagens-aereas/"
-        f"{origin}/{dest}/{yyyymmdd}/"
+    base = (
+        f"https://www.skyscanner.com.br/transporte/passagens-aereas/"
+        f"{origin.lower()}/{dest.lower()}/{yyyymmdd}/"
     )
+    params = urlencode(
+        {
+            "adults": "1",
+            "adultsv2": "1",
+            "cabinclass": "economy",
+            "rtn": "0",
+            "preferdirects": "false",
+            "outboundaltsenabled": "false",
+        }
+    )
+    return f"{base}?{params}"
 
 
 def resolve_links(offer: FlightOffer) -> dict[str, str]:
-    """Retorna links corretos por botão — nunca rotula Aviasales como Google Flights."""
-    gf_builtin = google_flights_link(
-        offer.departure_date,
-        offer.origin_airport,
-        offer.destination_airport,
-    )
-    raw = offer.link or ""
+    """Links por botão — Google/Skyscanner/Aviasales gerados na hora (nunca cache API)."""
+    origin = offer.origin_airport
+    dest = offer.destination_airport
+    date = offer.departure_date
 
-    google = (
-        raw
-        if "google.com/travel/flights" in raw
-        else gf_builtin
-    )
-    sky = skyscanner_link_for(
-        offer.departure_date,
-        offer.origin_airport,
-        offer.destination_airport,
-    )
-
-    links: dict[str, str] = {
-        "google_flights": google,
-        "skyscanner": sky,
+    links = {
+        "google_flights": google_flights_link(date, origin, dest),
+        "skyscanner": skyscanner_link_for(date, origin, dest),
     }
-    if "aviasales" in raw and raw.startswith("http"):
-        links["aviasales"] = raw
+    if offer.source == "travelpayouts" or "aviasales" in (offer.link or ""):
+        links["aviasales"] = aviasales_link(date, origin, dest)
     return links

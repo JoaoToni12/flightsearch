@@ -7,7 +7,8 @@ import os
 
 import requests
 
-from config import CURRENCY, DESTINATION, LOCALE, ORIGIN, SERPAPI_ENABLED, google_flights_link
+from config import CURRENCY, DESTINATION, LOCALE, ORIGIN, SERPAPI_ENABLED
+from links import google_flights_link
 from models import FlightOffer
 
 logger = logging.getLogger(__name__)
@@ -29,15 +30,23 @@ def _first_airline(flight: dict) -> str:
 
 def _extract_offers(payload: dict, departure_date: str) -> list[FlightOffer]:
     offers: list[FlightOffer] = []
-    gf_url = payload.get("search_metadata", {}).get("google_flights_url") or google_flights_link(
-        departure_date
-    )
-
+    meta = payload.get("search_metadata", {})
+    origin = ""
+    dest = ""
+    for bucket in ("best_flights", "other_flights"):
+        flights = (payload.get(bucket) or [{}])[0].get("flights") or []
+        if flights:
+            origin = flights[0].get("departure_airport", {}).get("id", "")
+            dest = flights[-1].get("arrival_airport", {}).get("id", "")
+            break
     for bucket in ("best_flights", "other_flights"):
         for flight in payload.get(bucket) or []:
             price = flight.get("price")
             if price is None:
                 continue
+            segments = flight.get("flights") or []
+            seg_origin = segments[0].get("departure_airport", {}).get("id", origin) if segments else origin
+            seg_dest = segments[-1].get("arrival_airport", {}).get("id", dest) if segments else dest
             offers.append(
                 FlightOffer(
                     price_brl=float(price),
@@ -46,7 +55,9 @@ def _extract_offers(payload: dict, departure_date: str) -> list[FlightOffer]:
                     duration_min=flight.get("total_duration"),
                     stops=_parse_stops(flight),
                     source="serpapi_google_flights",
-                    link=gf_url,
+                    link=google_flights_link(departure_date, seg_origin, seg_dest),
+                    origin_airport=seg_origin,
+                    destination_airport=seg_dest,
                     raw=flight,
                 )
             )
