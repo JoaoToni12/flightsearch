@@ -15,24 +15,31 @@ DEPARTURE_DATES: list[str] = os.getenv(
     "2026-07-23,2026-07-24,2026-07-25,2026-07-26,2026-07-27",
 ).split(",")
 
-# Referência de mercado (jun/2026) para SAO→PAR ida em julho — usada até a 1ª leitura real.
+# Datas ideais de emissão (prioridade na ordenação dos e-mails).
+PREFERRED_DEPARTURE_DATES: list[str] = os.getenv(
+    "PREFERRED_DEPARTURE_DATES",
+    "2026-07-24,2026-07-25",
+).split(",")
+
 MARKET_REFERENCE_SEED_BRL = float(os.getenv("MARKET_REFERENCE_SEED_BRL", "4200"))
 
-# 35% = meio do intervalo 30–40% mais barato que o preço de referência.
+# Verde: emissão nos parâmetros CAPES (~35% abaixo da referência).
 TARGET_DISCOUNT_PCT = float(os.getenv("TARGET_DISCOUNT_PCT", "35"))
 TARGET_DISCOUNT = TARGET_DISCOUNT_PCT / 100.0
 
-# Recalibra referência de mercado a cada N dias com dados reais das APIs.
+# Amarelo: oportunidade menos restritiva (~20% abaixo da referência).
+YELLOW_DISCOUNT_PCT = float(os.getenv("YELLOW_DISCOUNT_PCT", "20"))
+YELLOW_DISCOUNT = YELLOW_DISCOUNT_PCT / 100.0
+
+TOP_OFFERS_COUNT = int(os.getenv("TOP_OFFERS_COUNT", "3"))
+
 REFERENCE_RECALIBRATE_DAYS = int(os.getenv("REFERENCE_RECALIBRATE_DAYS", "7"))
 
-# SerpApi: 250 buscas/mês no free → 1 data por execução (round-robin).
 SERPAPI_ENABLED = os.getenv("SERPAPI_ENABLED", "true").lower() == "true"
-
 TRAVELPAYOUTS_ENABLED = os.getenv("TRAVELPAYOUTS_ENABLED", "true").lower() == "true"
 
 STATE_VARIABLE_NAME = os.getenv("STATE_VARIABLE_NAME", "FLIGHT_TRACKER_STATE")
 
-# Companhias / sellers aceitos para CAPES (evita OTAs obscuras quando possível).
 PREFERRED_AIRLINES = {
     "AF", "KL", "LH", "LX", "TP", "IB", "BA", "AZ", "UX", "AT", "TK",
     "AA", "AC", "AV", "LA", "G3", "AD",

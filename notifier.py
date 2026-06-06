@@ -1,93 +1,274 @@
-"""Notificações por e-mail (Resend free tier ou SMTP)."""
+"""Notificações por e-mail com alertas amarelo (watch) e verde (emissão)."""
 
 from __future__ import annotations
 
 import logging
 import os
 import smtplib
+from dataclasses import dataclass
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from enum import Enum
 
 import requests
 
-from config import skyscanner_link
+from config import (
+    PREFERRED_DEPARTURE_DATES,
+    TARGET_DISCOUNT_PCT,
+    YELLOW_DISCOUNT_PCT,
+    google_flights_link,
+    skyscanner_link,
+)
 from models import FlightOffer
 
 logger = logging.getLogger(__name__)
 
 
+class AlertLevel(str, Enum):
+    GREEN = "green"
+    YELLOW = "yellow"
+
+
+@dataclass(frozen=True)
+class AlertTheme:
+    level: AlertLevel
+    label: str
+    emoji: str
+    header_bg: str
+    header_text: str
+    accent: str
+    badge_bg: str
+    badge_text: str
+    border: str
+
+
+THEMES = {
+    AlertLevel.GREEN: AlertTheme(
+        level=AlertLevel.GREEN,
+        label="Emissão recomendada",
+        emoji="🟢",
+        header_bg="#0f766e",
+        header_text="#ecfdf5",
+        accent="#14b8a6",
+        badge_bg="#d1fae5",
+        badge_text="#065f46",
+        border="#99f6e4",
+    ),
+    AlertLevel.YELLOW: AlertTheme(
+        level=AlertLevel.YELLOW,
+        label="Oportunidade em observação",
+        emoji="🟡",
+        header_bg="#b45309",
+        header_text="#fffbeb",
+        accent="#f59e0b",
+        badge_bg="#fef3c7",
+        badge_text="#92400e",
+        border="#fde68a",
+    ),
+}
+
+
 def _format_duration(minutes: int | None) -> str:
     if minutes is None:
-        return "N/D"
+        return "—"
     hours, mins = divmod(minutes, 60)
     return f"{hours}h{mins:02d}"
 
 
-def build_email_body(
-    offer: FlightOffer,
+def _format_date_br(iso_date: str) -> str:
+    try:
+        y, m, d = iso_date.split("-")
+        return f"{d}/{m}/{y}"
+    except ValueError:
+        return iso_date
+
+
+def _format_brl(value: float) -> str:
+    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _ideal_badge(departure_date: str) -> str:
+    if departure_date in PREFERRED_DEPARTURE_DATES:
+        return "★ Data ideal"
+    return ""
+
+
+def _offer_card_html(offer: FlightOffer, rank: int, theme: AlertTheme) -> str:
+    ideal = _ideal_badge(offer.departure_date)
+    ideal_html = (
+        f'<span style="display:inline-block;margin-left:8px;padding:2px 8px;'
+        f'background:{theme.badge_bg};color:{theme.badge_text};'
+        f'font-size:11px;font-weight:600;border-radius:999px;">{ideal}</span>'
+        if ideal
+        else ""
+    )
+    route = f"{offer.origin_airport or 'SAO'} → {offer.destination_airport or 'PAR'}"
+    gf = offer.link or google_flights_link(offer.departure_date)
+    sky = skyscanner_link(offer.departure_date)
+    stops = "Direto" if offer.stops == 0 else f"{offer.stops} escala(s)"
+
+    return f"""
+    <tr>
+      <td style="padding:0 0 16px 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+               style="border:1px solid {theme.border};border-radius:12px;overflow:hidden;background:#ffffff;">
+          <tr>
+            <td style="padding:16px 20px;background:#f8fafc;border-bottom:1px solid #e2e8f0;">
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                <tr>
+                  <td style="font-size:13px;color:#64748b;font-weight:600;">#{rank}</td>
+                  <td align="right" style="font-size:24px;font-weight:700;color:#0f172a;">
+                    {_format_brl(offer.price_brl)}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px 20px;">
+              <div style="font-size:18px;font-weight:700;color:#0f172a;margin-bottom:4px;">
+                {_format_date_br(offer.departure_date)}{ideal_html}
+              </div>
+              <div style="font-size:15px;color:#334155;margin-bottom:12px;">
+                {offer.airline}
+                {f" · voo {offer.flight_number}" if offer.flight_number else ""}
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+                     style="font-size:13px;color:#475569;">
+                <tr>
+                  <td width="33%" style="padding:8px 0;">Rota<br><strong style="color:#0f172a;">{route}</strong></td>
+                  <td width="33%" style="padding:8px 0;">Duração<br><strong style="color:#0f172a;">{_format_duration(offer.duration_min)}</strong></td>
+                  <td width="33%" style="padding:8px 0;">Paradas<br><strong style="color:#0f172a;">{stops}</strong></td>
+                </tr>
+              </table>
+              <div style="margin-top:14px;font-size:12px;color:#94a3b8;">
+                Fonte: {offer.source}
+              </div>
+              <div style="margin-top:16px;">
+                <a href="{gf}" style="display:inline-block;margin-right:8px;padding:10px 16px;
+                   background:{theme.accent};color:#ffffff;text-decoration:none;font-size:13px;
+                   font-weight:600;border-radius:8px;">Google Flights</a>
+                <a href="{sky}" style="display:inline-block;padding:10px 16px;background:#e2e8f0;
+                   color:#0f172a;text-decoration:none;font-size:13px;font-weight:600;border-radius:8px;">
+                   Skyscanner
+                </a>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    """
+
+
+def build_tiered_email(
+    level: AlertLevel,
+    offers: list[FlightOffer],
     *,
     reason: str,
     reference_price: float,
-    target_price: float,
-    sources_summary: str,
+    green_target: float,
+    yellow_target: float,
 ) -> tuple[str, str, str]:
+    theme = THEMES[level]
+    best = offers[0]
     subject = (
-        f"✈️ Alerta SAO→PAR: R$ {offer.price_brl:,.0f} "
-        f"({offer.departure_date}) — {offer.airline}"
+        f"{theme.emoji} {theme.label} — SAO→PAR a partir de "
+        f"{_format_brl(best.price_brl)} ({_format_date_br(best.departure_date)})"
     )
-    gf = offer.link
-    sky = skyscanner_link(offer.departure_date)
 
-    text = f"""Alerta de passagem — São Paulo → França (só ida)
+    cards_text = []
+    for i, offer in enumerate(offers, 1):
+        ideal = " [DATA IDEAL]" if offer.departure_date in PREFERRED_DEPARTURE_DATES else ""
+        cards_text.append(
+            f"{i}. {_format_brl(offer.price_brl)} — {_format_date_br(offer.departure_date)}{ideal}\n"
+            f"   {offer.airline} | {offer.origin_airport or 'SAO'}→{offer.destination_airport or 'PAR'} | "
+            f"{_format_duration(offer.duration_min)} | {offer.stops} esc.\n"
+            f"   {offer.link}"
+        )
 
-Motivo: {reason}
-Preço encontrado: R$ {offer.price_brl:,.2f}
-Referência de mercado: R$ {reference_price:,.2f}
-Preço-alvo (~{((reference_price - target_price) / reference_price * 100) if reference_price else 35:.0f}% abaixo da ref.): R$ {target_price:,.2f}
+    text = f"""{theme.emoji} {theme.label.upper()} — São Paulo → França (só ida)
 
-Voo:
-  Data ida: {offer.departure_date}
-  Companhia: {offer.airline}
-  Nº voo: {offer.flight_number or 'N/D'}
-  Duração: {_format_duration(offer.duration_min)}
-  Escalas: {offer.stops}
-  Origem/Destino: {offer.origin_airport or 'SAO'} → {offer.destination_airport or 'PAR'}
-  Fonte: {offer.source}
+{reason}
 
-Links:
-  Google Flights / principal: {gf}
-  Skyscanner: {sky}
+Referência de mercado: {_format_brl(reference_price)}
+Alvo verde (-{TARGET_DISCOUNT_PCT:.0f}%): {_format_brl(green_target)}
+Faixa amarela (-{YELLOW_DISCOUNT_PCT:.0f}%): abaixo de {_format_brl(yellow_target)}
+Datas ideais: 24/07 e 25/07/2026
 
-Resumo das fontes nesta execução:
-{sources_summary}
+Top {len(offers)} opções agora:
+{chr(10).join(cards_text)}
 
 ---
-Monitor automático flightsearch (GitHub Actions).
-Regra anti-spam: só envia se preço < alvo ou quebra do último alerta.
+flightsearch · monitor automático
 """
 
-    html = f"""
-<html><body style="font-family: sans-serif; line-height: 1.5;">
-<h2>✈️ Alerta SAO → PAR (só ida)</h2>
-<p><strong>Motivo:</strong> {reason}</p>
-<table cellpadding="6" style="border-collapse: collapse;">
-  <tr><td>Preço</td><td><strong style="font-size:1.3em;">R$ {offer.price_brl:,.2f}</strong></td></tr>
-  <tr><td>Referência mercado</td><td>R$ {reference_price:,.2f}</td></tr>
-  <tr><td>Preço-alvo</td><td>R$ {target_price:,.2f}</td></tr>
-  <tr><td>Data</td><td>{offer.departure_date}</td></tr>
-  <tr><td>Companhia</td><td>{offer.airline}</td></tr>
-  <tr><td>Duração</td><td>{_format_duration(offer.duration_min)}</td></tr>
-  <tr><td>Escalas</td><td>{offer.stops}</td></tr>
-  <tr><td>Fonte</td><td>{offer.source}</td></tr>
-</table>
-<p>
-  <a href="{gf}">Abrir no Google Flights</a> ·
-  <a href="{sky}">Abrir no Skyscanner</a>
-</p>
-<pre style="background:#f4f4f4;padding:12px;font-size:12px;">{sources_summary}</pre>
-</body></html>
-"""
-    return subject, text, html  # type: ignore[return-value]
+    cards_html = "".join(_offer_card_html(o, i, theme) for i, o in enumerate(offers, 1))
+    ideal_note = "Priorizamos voos em <strong>24/07</strong> e <strong>25/07</strong> quando o preço é equivalente."
+
+    html = f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f1f5f9;padding:24px 12px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" role="presentation" style="max-width:600px;width:100%;">
+        <tr>
+          <td style="background:{theme.header_bg};color:{theme.header_text};padding:28px 32px;border-radius:16px 16px 0 0;">
+            <div style="font-size:13px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;opacity:0.9;">
+              flightsearch · SAO → PAR
+            </div>
+            <div style="font-size:28px;font-weight:800;margin-top:8px;line-height:1.2;">
+              {theme.emoji} {theme.label}
+            </div>
+            <div style="font-size:15px;margin-top:10px;line-height:1.5;opacity:0.95;">{reason}</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#ffffff;padding:24px 32px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">
+            <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+                   style="background:#f8fafc;border-radius:10px;margin-bottom:20px;">
+              <tr>
+                <td style="padding:16px 18px;font-size:13px;color:#475569;">
+                  <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                    <tr>
+                      <td width="50%" style="padding:4px 0;">Referência<br><strong style="color:#0f172a;font-size:16px;">{_format_brl(reference_price)}</strong></td>
+                      <td width="50%" style="padding:4px 0;">Alvo verde<br><strong style="color:#065f46;font-size:16px;">{_format_brl(green_target)}</strong></td>
+                    </tr>
+                    <tr>
+                      <td colspan="2" style="padding:10px 0 0 0;border-top:1px solid #e2e8f0;">
+                        Faixa amarela: abaixo de <strong style="color:#92400e;">{_format_brl(yellow_target)}</strong>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+            <div style="font-size:14px;color:#64748b;margin-bottom:16px;">{ideal_note}</div>
+            <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:12px;">
+              Top {len(offers)} opções agora
+            </div>
+            <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+              {cards_html}
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#ffffff;padding:0 32px 28px;border-radius:0 0 16px 16px;
+                     border:1px solid #e2e8f0;border-top:none;">
+            <div style="font-size:12px;color:#94a3b8;line-height:1.6;text-align:center;">
+              Alerta automático · reembolso CAPES: prefira tarifa oficial via Google Flights ou cia. aérea.<br>
+              Datas monitoradas: 23 a 27/07/2026 · prioridade 24 e 25/07.
+            </div>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+    return subject, text, html
 
 
 def _send_resend(subject: str, text: str, html: str, to_email: str) -> None:
@@ -130,80 +311,11 @@ def _send_smtp(subject: str, text: str, html: str, to_email: str) -> None:
         server.sendmail(from_email, [to_email], msg.as_string())
 
 
-def send_status_email(
-    offer: FlightOffer,
-    *,
-    reference_price: float,
-    target_price: float,
-    sources_summary: str,
-    alert_pending_reason: str,
-) -> bool:
-    """E-mail informativo (não é alerta de preço) — útil para validar Resend/SMTP."""
+def _dispatch_email(subject: str, text: str, html: str) -> bool:
     to_email = os.getenv("ALERT_EMAIL")
     if not to_email:
         logger.error("ALERT_EMAIL não configurado.")
         return False
-
-    subject = (
-        f"[flightsearch] Monitor ativo — menor preço R$ {offer.price_brl:,.0f} "
-        f"(alvo R$ {target_price:,.0f})"
-    )
-    text = f"""Monitor flightsearch — status da varredura
-
-Menor preço agora: R$ {offer.price_brl:,.2f}
-Referência de mercado: R$ {reference_price:,.2f}
-Preço-alvo para alerta: R$ {target_price:,.2f}
-
-Melhor oferta:
-  {offer.departure_date} | {offer.airline} | {offer.stops} escala(s) | {offer.source}
-
-Por que não alertou:
-  {alert_pending_reason}
-
-Fontes:
-{sources_summary}
-
----
-Este é um e-mail de status/teste. Alertas reais só quando o preço cruzar o alvo.
-"""
-    html = f"<html><body><pre>{text}</pre></body></html>"
-
-    try:
-        if os.getenv("RESEND_API_KEY"):
-            _send_resend(subject, text, html, to_email)
-        elif os.getenv("SMTP_HOST"):
-            _send_smtp(subject, text, html, to_email)
-        else:
-            logger.error("Configure RESEND_API_KEY ou SMTP_HOST para enviar e-mail.")
-            return False
-        logger.info("E-mail de status enviado para %s", to_email)
-        return True
-    except Exception as exc:
-        logger.exception("Falha ao enviar e-mail de status: %s", exc)
-        return False
-
-
-def send_alert_email(
-    offer: FlightOffer,
-    *,
-    reason: str,
-    reference_price: float,
-    target_price: float,
-    sources_summary: str,
-) -> bool:
-    to_email = os.getenv("ALERT_EMAIL")
-    if not to_email:
-        logger.error("ALERT_EMAIL não configurado.")
-        return False
-
-    subject, text, html = build_email_body(
-        offer,
-        reason=reason,
-        reference_price=reference_price,
-        target_price=target_price,
-        sources_summary=sources_summary,
-    )
-
     try:
         if os.getenv("RESEND_API_KEY"):
             _send_resend(subject, text, html, to_email)
@@ -217,3 +329,45 @@ def send_alert_email(
     except Exception as exc:
         logger.exception("Falha ao enviar e-mail: %s", exc)
         return False
+
+
+def send_tiered_alert(
+    level: AlertLevel,
+    offers: list[FlightOffer],
+    *,
+    reason: str,
+    reference_price: float,
+    green_target: float,
+    yellow_target: float,
+) -> bool:
+    if not offers:
+        return False
+    subject, text, html = build_tiered_email(
+        level,
+        offers,
+        reason=reason,
+        reference_price=reference_price,
+        green_target=green_target,
+        yellow_target=yellow_target,
+    )
+    return _dispatch_email(subject, text, html)
+
+
+def send_status_email(
+    offers: list[FlightOffer],
+    *,
+    reference_price: float,
+    green_target: float,
+    yellow_target: float,
+    alert_pending_reason: str,
+) -> bool:
+    """E-mail de teste/status com o mesmo layout, nível amarelo."""
+    reason = f"Teste de entrega — {alert_pending_reason}"
+    return send_tiered_alert(
+        AlertLevel.YELLOW,
+        offers,
+        reason=reason,
+        reference_price=reference_price,
+        green_target=green_target,
+        yellow_target=yellow_target,
+    )

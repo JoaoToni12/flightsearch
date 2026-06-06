@@ -1,4 +1,4 @@
-"""Orquestrador: busca multi-fonte, calcula alvo dinâmico, alerta por e-mail."""
+"""Orquestrador: busca multi-fonte, alertas amarelo/verde, e-mail com top 3."""
 
 from __future__ import annotations
 
@@ -13,11 +13,14 @@ from config import (
     REFERENCE_RECALIBRATE_DAYS,
     TARGET_DISCOUNT,
     TARGET_DISCOUNT_PCT,
+    YELLOW_DISCOUNT,
+    YELLOW_DISCOUNT_PCT,
 )
 from fetchers import fetch_all_offers
 from models import FlightOffer
-from notifier import send_alert_email, send_status_email
-from state_manager import default_state, load_state, save_state
+from notifier import AlertLevel, send_status_email, send_tiered_alert
+from ranking import filter_by_max_price, filter_yellow_only, top_offers
+from state_manager import load_state, save_state
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -32,12 +35,6 @@ def _parse_iso(value: str | None) -> datetime | None:
         return None
 
 
-def _pick_best_offer(offers: list[FlightOffer]) -> FlightOffer | None:
-    if not offers:
-        return None
-    return min(offers, key=lambda o: o.price_brl)
-
-
 def _per_source_mins(offers: list[FlightOffer]) -> dict[str, float]:
     mins: dict[str, float] = {}
     for offer in offers:
@@ -47,29 +44,11 @@ def _per_source_mins(offers: list[FlightOffer]) -> dict[str, float]:
     return mins
 
 
-def _sources_summary(offers: list[FlightOffer]) -> str:
-    if not offers:
-        return "Nenhuma oferta retornada pelas fontes configuradas."
-    lines = []
-    for source, price in sorted(_per_source_mins(offers).items()):
-        count = sum(1 for o in offers if o.source == source)
-        lines.append(f"  • {source}: menor R$ {price:,.2f} ({count} ofertas)")
-    best = _pick_best_offer(offers)
-    if best:
-        lines.append(
-            f"\nMelhor global: R$ {best.price_brl:,.2f} — {best.airline} em {best.departure_date} ({best.source})"
-        )
-    return "\n".join(lines)
-
-
 def _update_reference(state: dict, scan_min: float | None) -> float:
     reference = float(state.get("reference_price_brl") or MARKET_REFERENCE_SEED_BRL)
     updated_at = _parse_iso(state.get("reference_updated_at"))
     now = datetime.now(timezone.utc)
-    stale = (
-        updated_at is None
-        or (now - updated_at).days >= REFERENCE_RECALIBRATE_DAYS
-    )
+    stale = updated_at is None or (now - updated_at).days >= REFERENCE_RECALIBRATE_DAYS
 
     if scan_min is None:
         return reference
@@ -96,19 +75,28 @@ def _serpapi_dates_for_run(state: dict) -> list[str]:
     return chosen
 
 
-def _should_alert(
-    best: FlightOffer,
-    target: float,
+def _last_notified(state: dict, key: str, legacy_key: str | None = None) -> float | None:
+    raw = state.get(key)
+    if raw is None and legacy_key:
+        raw = state.get(legacy_key)
+    return float(raw) if raw is not None else None
+
+
+def _should_notify_tier(
+    qualifying: list[FlightOffer],
     last_notified: float | None,
-) -> tuple[bool, str]:
-    if best.price_brl < target:
-        return True, f"Preço R$ {best.price_brl:,.2f} abaixo do alvo R$ {target:,.2f}"
-    if last_notified is not None and best.price_brl < last_notified:
-        return (
-            True,
-            f"Quebra de preço: R$ {best.price_brl:,.2f} < último alerta R$ {last_notified:,.2f}",
+) -> tuple[bool, str, float | None]:
+    if not qualifying:
+        return False, "", None
+    best_price = min(o.price_brl for o in qualifying)
+    if last_notified is None or best_price < last_notified:
+        reason = (
+            f"Menor preço qualificado: R$ {best_price:,.2f}"
+            if last_notified is None
+            else f"Quebra de preço: R$ {best_price:,.2f} < R$ {last_notified:,.2f}"
         )
-    return False, ""
+        return True, reason, best_price
+    return False, "", best_price
 
 
 def run() -> int:
@@ -124,59 +112,78 @@ def run() -> int:
         save_state(state)
         return 1
 
-    best = _pick_best_offer(offers)
-    assert best is not None
-
-    scan_min = best.price_brl
+    scan_min = min(o.price_brl for o in offers)
     source_mins = _per_source_mins(offers)
-    # Com 2+ fontes, referência = maior mínimo entre fontes (preço "de mercado").
     market_signal = max(source_mins.values()) if len(source_mins) >= 2 else scan_min
     reference = _update_reference(state, market_signal)
-    target = round(reference * (1 - TARGET_DISCOUNT), 2)
-    state["target_price_brl"] = target
 
-    state["last_cheapest"] = best.to_dict()
+    green_target = round(reference * (1 - TARGET_DISCOUNT), 2)
+    yellow_target = round(reference * (1 - YELLOW_DISCOUNT), 2)
+    state["target_price_brl"] = green_target
+    state["yellow_target_price_brl"] = yellow_target
 
-    last_notified = state.get("last_notified_price_brl")
-    last_notified_f = float(last_notified) if last_notified is not None else None
+    green_pool = filter_by_max_price(offers, green_target)
+    yellow_pool = filter_yellow_only(offers, yellow_target, green_target)
 
-    should, reason = _should_alert(best, target, last_notified_f)
+    last_green = _last_notified(state, "last_green_notified_price_brl", "last_notified_price_brl")
+    last_yellow = _last_notified(state, "last_yellow_notified_price_brl")
+
+    green_send, green_reason, green_best = _should_notify_tier(green_pool, last_green)
+    yellow_send, yellow_reason, yellow_best = _should_notify_tier(yellow_pool, last_yellow)
+
+    best_overall = min(offers, key=lambda o: o.price_brl)
+    state["last_cheapest"] = best_overall.to_dict()
 
     logger.info(
-        "Scan: R$ %.2f | Ref: R$ %.2f | Alvo (-%s%%): R$ %.2f | Fontes: %s",
+        "Scan: R$ %.2f | Ref: R$ %.2f | Verde (-%s%%): R$ %.2f | Amarelo (-%s%%): R$ %.2f",
         scan_min,
         reference,
         TARGET_DISCOUNT_PCT,
-        target,
-        list(_per_source_mins(offers).keys()),
+        green_target,
+        YELLOW_DISCOUNT_PCT,
+        yellow_target,
     )
 
-    if should:
-        sent = send_alert_email(
-            best,
-            reason=reason,
+    sent = False
+    if green_send:
+        picks = top_offers(green_pool)
+        sent = send_tiered_alert(
+            AlertLevel.GREEN,
+            picks,
+            reason=green_reason,
             reference_price=reference,
-            target_price=target,
-            sources_summary=_sources_summary(offers),
+            green_target=green_target,
+            yellow_target=yellow_target,
         )
-        if sent:
-            state["last_notified_price_brl"] = best.price_brl
+        if sent and green_best is not None:
+            state["last_green_notified_price_brl"] = green_best
+            state["last_notified_price_brl"] = green_best
+        logger.info("Alerta VERDE disparado (%d opções).", len(picks))
+    elif yellow_send:
+        picks = top_offers(yellow_pool)
+        sent = send_tiered_alert(
+            AlertLevel.YELLOW,
+            picks,
+            reason=yellow_reason,
+            reference_price=reference,
+            green_target=green_target,
+            yellow_target=yellow_target,
+        )
+        if sent and yellow_best is not None:
+            state["last_yellow_notified_price_brl"] = yellow_best
+        logger.info("Alerta AMARELO disparado (%d opções).", len(picks))
     else:
         pending = (
-            f"R$ {best.price_brl:,.2f} ainda acima do alvo R$ {target:,.2f}"
-            + (
-                f" e do último alerta R$ {last_notified_f:,.2f}"
-                if last_notified_f is not None
-                else " (nenhum alerta enviado ainda)"
-            )
+            f"Verde: {len(green_pool)} op. | Amarelo: {len(yellow_pool)} op. "
+            f"— sem quebra vs últimos alertas"
         )
         logger.info("Sem alerta (%s).", pending)
         if os.getenv("TEST_EMAIL", "").lower() == "true":
             send_status_email(
-                best,
+                top_offers(offers),
                 reference_price=reference,
-                target_price=target,
-                sources_summary=_sources_summary(offers),
+                green_target=green_target,
+                yellow_target=yellow_target,
                 alert_pending_reason=pending,
             )
 
