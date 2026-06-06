@@ -26,17 +26,16 @@ def test_green_pool_below_target():
 
 
 def test_yellow_pool_excludes_green():
-    ref = 2500.0
-    green_max = ref * 0.65
-    yellow_max = ref * 0.80
+    green_max = 1625.0
+    yellow_max = 1722.5  # +6% sobre verde
     offers = [
         _offer(1500, "2026-07-23"),   # verde
-        _offer(1800, "2026-07-24"),   # amarelo
+        _offer(1680, "2026-07-24"),   # amarelo
         _offer(2100, "2026-07-25"),   # acima da faixa amarela
     ]
     yellow = filter_yellow_only(offers, yellow_max, green_max)
     assert len(yellow) == 1
-    assert yellow[0].price_brl == 1800
+    assert yellow[0].price_brl == 1680
     assert all(green_max <= o.price_brl < yellow_max for o in yellow)
 
 

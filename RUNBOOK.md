@@ -17,25 +17,20 @@ Monitor de passagens **só ida** (23–27/07/2026) com **duas fontes gratuitas**
 - Travelpayouts consulta **todas as 5 datas** a cada run.
 - SerpApi consulta **1 data por run** (round-robin) → ~180 buscas/mês, dentro do free tier.
 
-## Preço de referência e alvo (dinâmico)
+## Preço de referência e alvos (dinâmico)
 
-Pesquisa de mercado (jun/2026), SAO→PAR ida em julho:
+**Por que a referência pode ser maior que o menor preço do scan?**
 
-| Fonte | Menor ida encontrada | Observação |
-|-------|----------------------|------------|
-| KAYAK / Momondo | **R$ 2.574** (23/07) | Promo pontual |
-| Mundi (média julho) | ~R$ 6.289 | Alta temporada |
-| Referência conservadora usada | **R$ 4.200** | Seed até 1ª leitura real |
+Com duas fontes, a referência CAPES usa o **maior mínimo por fonte** (ex.: Travelpayouts R$ 2.448 vs SerpApi/Google R$ 3.495 → ref. **R$ 3.495**). O scan mostra o melhor achado; a referência é o baseline conservador para não emitir cedo demais.
 
-Com desconto alvo de **35%** (meio do intervalo 30–40%):
+| Tier | Regra | Frequência alvo (cron 2h) |
+|------|-------|---------------------------|
+| **Verde** (compra) | preço **<** `ref × 65%` (−35%) | ~1 alerta a cada 2–3 dias |
+| **Amarelo** (observação) | faixa **verde ≤ preço < verde×1,06** (+6%) | ~2 alertas/dia no máximo |
 
-- **Preço-alvo inicial ≈ R$ 2.730** (`4200 × 0,65`)
+Reenvio exige quebra mínima: amarelo Δ≥R$ 60, verde Δ≥R$ 80 vs último alerta do tier.
 
-Após a primeira execução com APIs:
-
-1. `reference_price` = menor preço real encontrado (recalibra a cada 7 dias ou se o mercado subir).
-2. `target_price` = `reference × (1 - TARGET_DISCOUNT_PCT/100)`.
-3. **E-mail só se:** preço < alvo **ou** preço < último preço já notificado.
+Variáveis opcionais: `TARGET_DISCOUNT_PCT`, `YELLOW_BAND_ABOVE_GREEN_PCT`, `YELLOW_MIN_BREAK_BRL`, `GREEN_MIN_BREAK_BRL`.
 
 ## 1. Criar repositório público
 

@@ -23,13 +23,16 @@ PREFERRED_DEPARTURE_DATES: list[str] = os.getenv(
 
 MARKET_REFERENCE_SEED_BRL = float(os.getenv("MARKET_REFERENCE_SEED_BRL", "4200"))
 
-# Verde: emissão nos parâmetros CAPES (~35% abaixo da referência).
+# Verde: emissão CAPES (~35% abaixo da referência conservadora).
 TARGET_DISCOUNT_PCT = float(os.getenv("TARGET_DISCOUNT_PCT", "35"))
 TARGET_DISCOUNT = TARGET_DISCOUNT_PCT / 100.0
 
-# Amarelo: oportunidade menos restritiva (~20% abaixo da referência).
-YELLOW_DISCOUNT_PCT = float(os.getenv("YELLOW_DISCOUNT_PCT", "20"))
-YELLOW_DISCOUNT = YELLOW_DISCOUNT_PCT / 100.0
+# Amarelo: faixa estreita acima do verde (~6% → ~2 alertas/dia com cron 2h).
+YELLOW_BAND_ABOVE_GREEN_PCT = float(os.getenv("YELLOW_BAND_ABOVE_GREEN_PCT", "6"))
+
+# Reenvio só após quebra mínima de preço (evita spam no mesmo patamar).
+YELLOW_MIN_BREAK_BRL = float(os.getenv("YELLOW_MIN_BREAK_BRL", "60"))
+GREEN_MIN_BREAK_BRL = float(os.getenv("GREEN_MIN_BREAK_BRL", "80"))
 
 TOP_OFFERS_COUNT = int(os.getenv("TOP_OFFERS_COUNT", "3"))
 

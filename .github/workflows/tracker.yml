@@ -54,7 +54,9 @@ jobs:
           ALERT_EMAIL_CC: ${{ vars.ALERT_EMAIL_CC || 'thiagofm.br@gmail.com' }}
 
           TARGET_DISCOUNT_PCT: ${{ vars.TARGET_DISCOUNT_PCT || '35' }}
-          YELLOW_DISCOUNT_PCT: ${{ vars.YELLOW_DISCOUNT_PCT || '20' }}
+          YELLOW_BAND_ABOVE_GREEN_PCT: ${{ vars.YELLOW_BAND_ABOVE_GREEN_PCT || '6' }}
+          YELLOW_MIN_BREAK_BRL: ${{ vars.YELLOW_MIN_BREAK_BRL || '60' }}
+          GREEN_MIN_BREAK_BRL: ${{ vars.GREEN_MIN_BREAK_BRL || '80' }}
           PREFERRED_DEPARTURE_DATES: ${{ vars.PREFERRED_DEPARTURE_DATES || '2026-07-24,2026-07-25' }}
           MARKET_REFERENCE_SEED_BRL: ${{ vars.MARKET_REFERENCE_SEED_BRL || '4200' }}
           TEST_EMAIL: ${{ inputs.test_email || 'false' }}

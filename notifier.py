@@ -15,7 +15,7 @@ from enum import Enum
 
 import requests
 
-from config import PREFERRED_DEPARTURE_DATES, TARGET_DISCOUNT_PCT, YELLOW_DISCOUNT_PCT
+from config import PREFERRED_DEPARTURE_DATES, TARGET_DISCOUNT_PCT, YELLOW_BAND_ABOVE_GREEN_PCT
 from links import resolve_links
 from models import FlightOffer
 
@@ -199,6 +199,8 @@ def build_tiered_email(
     reference_price: float,
     green_target: float,
     yellow_target: float,
+    scan_min: float | None = None,
+    reference_basis: str = "",
 ) -> tuple[str, str, str]:
     theme = THEMES[level]
     best = offers[0]
@@ -220,13 +222,18 @@ def build_tiered_email(
             f"   Aviasales: {resolve_links(offer).get('aviasales', '—')}"
         )
 
+    scan_line = (
+        f"Melhor preço no scan: {_format_brl(scan_min)}\n" if scan_min is not None else ""
+    )
+    ref_detail = f" ({reference_basis})" if reference_basis else ""
+
     text = f"""{theme.emoji} {theme.label.upper()} — São Paulo → França (só ida)
 
 {reason}
 
-Referência de mercado: {_format_brl(reference_price)}
-Alvo verde (-{TARGET_DISCOUNT_PCT:.0f}%): {_format_brl(green_target)}
-Faixa amarela (-{YELLOW_DISCOUNT_PCT:.0f}%): abaixo de {_format_brl(yellow_target)}
+{scan_line}Referência CAPES: {_format_brl(reference_price)}{ref_detail}
+Alvo verde (compra, -{TARGET_DISCOUNT_PCT:.0f}% da ref.): {_format_brl(green_target)}
+Faixa amarela (observação): {_format_brl(green_target)} a {_format_brl(yellow_target)} (+{YELLOW_BAND_ABOVE_GREEN_PCT:.0f}% sobre verde)
 Datas ideais: 24/07 e 25/07/2026
 
 Top {len(offers)} opções agora:
@@ -266,12 +273,19 @@ flightsearch · monitor automático
                 <td style="padding:16px 18px;font-size:13px;color:#475569;">
                   <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
                     <tr>
-                      <td width="50%" style="padding:4px 0;">Referência<br><strong style="color:#0f172a;font-size:16px;">{_format_brl(reference_price)}</strong></td>
-                      <td width="50%" style="padding:4px 0;">Alvo verde<br><strong style="color:#065f46;font-size:16px;">{_format_brl(green_target)}</strong></td>
+                      <td width="50%" style="padding:4px 0;">Referência CAPES<br><strong style="color:#0f172a;font-size:16px;">{_format_brl(reference_price)}</strong></td>
+                      <td width="50%" style="padding:4px 0;">Alvo verde (compra)<br><strong style="color:#065f46;font-size:16px;">{_format_brl(green_target)}</strong></td>
+                    </tr>
+                    <tr>
+                      <td colspan="2" style="padding:6px 0 0 0;font-size:12px;color:#64748b;">
+                        {f"Scan atual: <strong>{_format_brl(scan_min)}</strong> · " if scan_min is not None else ""}
+                        {reference_basis or "baseline conservador entre fontes"}
+                      </td>
                     </tr>
                     <tr>
                       <td colspan="2" style="padding:10px 0 0 0;border-top:1px solid #e2e8f0;">
-                        Faixa amarela: abaixo de <strong style="color:#92400e;">{_format_brl(yellow_target)}</strong>
+                        Faixa amarela: <strong style="color:#92400e;">{_format_brl(green_target)} – {_format_brl(yellow_target)}</strong>
+                        <span style="color:#64748b;"> (+{YELLOW_BAND_ABOVE_GREEN_PCT:.0f}% sobre verde)</span>
                       </td>
                     </tr>
                   </table>
@@ -382,6 +396,8 @@ def send_tiered_alert(
     reference_price: float,
     green_target: float,
     yellow_target: float,
+    scan_min: float | None = None,
+    reference_basis: str = "",
 ) -> bool:
     if not offers:
         return False
@@ -392,6 +408,8 @@ def send_tiered_alert(
         reference_price=reference_price,
         green_target=green_target,
         yellow_target=yellow_target,
+        scan_min=scan_min,
+        reference_basis=reference_basis,
     )
     return _dispatch_email(subject, text, html)
 
@@ -403,6 +421,8 @@ def send_status_email(
     green_target: float,
     yellow_target: float,
     alert_pending_reason: str,
+    scan_min: float | None = None,
+    reference_basis: str = "",
 ) -> bool:
     """E-mail de teste/status com o mesmo layout, nível amarelo."""
     reason = f"[TESTE] Verificação de entrega — {alert_pending_reason}"
@@ -413,4 +433,6 @@ def send_status_email(
         reference_price=reference_price,
         green_target=green_target,
         yellow_target=yellow_target,
+        scan_min=scan_min,
+        reference_basis=reference_basis,
     )

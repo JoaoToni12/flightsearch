@@ -43,5 +43,5 @@ def filter_yellow_only(
     yellow_max: float,
     green_max: float,
 ) -> list[FlightOffer]:
-    """Ofertas na faixa amarela: abaixo de 20% off, mas ainda acima do alvo verde."""
+    """Ofertas na faixa amarela: entre alvo verde (inclusive) e teto amarelo (exclusive)."""
     return [o for o in offers if o.price_brl < yellow_max and o.price_brl >= green_max]

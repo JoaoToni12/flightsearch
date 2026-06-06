@@ -5,65 +5,27 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from datetime import datetime, timezone
 
+from calibration import (
+    compute_thresholds,
+    per_source_mins,
+    should_notify_tier,
+    update_reference,
+)
 from config import (
     DEPARTURE_DATES,
-    MARKET_REFERENCE_SEED_BRL,
-    REFERENCE_RECALIBRATE_DAYS,
-    TARGET_DISCOUNT,
+    GREEN_MIN_BREAK_BRL,
     TARGET_DISCOUNT_PCT,
-    YELLOW_DISCOUNT,
-    YELLOW_DISCOUNT_PCT,
+    YELLOW_BAND_ABOVE_GREEN_PCT,
+    YELLOW_MIN_BREAK_BRL,
 )
 from fetchers import fetch_all_offers
-from models import FlightOffer
 from notifier import AlertLevel, send_status_email, send_tiered_alert
 from ranking import filter_by_max_price, filter_yellow_only, top_offers
 from state_manager import load_state, save_state
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
-
-
-def _parse_iso(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def _per_source_mins(offers: list[FlightOffer]) -> dict[str, float]:
-    mins: dict[str, float] = {}
-    for offer in offers:
-        current = mins.get(offer.source)
-        if current is None or offer.price_brl < current:
-            mins[offer.source] = offer.price_brl
-    return mins
-
-
-def _update_reference(state: dict, scan_min: float | None) -> float:
-    reference = float(state.get("reference_price_brl") or MARKET_REFERENCE_SEED_BRL)
-    updated_at = _parse_iso(state.get("reference_updated_at"))
-    now = datetime.now(timezone.utc)
-    stale = updated_at is None or (now - updated_at).days >= REFERENCE_RECALIBRATE_DAYS
-
-    if scan_min is None:
-        return reference
-
-    if stale or reference == MARKET_REFERENCE_SEED_BRL:
-        reference = scan_min
-        state["reference_updated_at"] = now.replace(microsecond=0).isoformat()
-        logger.info("Referência recalibrada para R$ %.2f", reference)
-    elif scan_min > reference:
-        reference = scan_min
-        state["reference_updated_at"] = now.replace(microsecond=0).isoformat()
-        logger.info("Referência elevada (mercado subiu) para R$ %.2f", reference)
-
-    state["reference_price_brl"] = round(reference, 2)
-    return reference
 
 
 def _serpapi_dates_for_run(state: dict) -> list[str]:
@@ -82,23 +44,6 @@ def _last_notified(state: dict, key: str, legacy_key: str | None = None) -> floa
     return float(raw) if raw is not None else None
 
 
-def _should_notify_tier(
-    qualifying: list[FlightOffer],
-    last_notified: float | None,
-) -> tuple[bool, str, float | None]:
-    if not qualifying:
-        return False, "", None
-    best_price = min(o.price_brl for o in qualifying)
-    if last_notified is None or best_price < last_notified:
-        reason = (
-            f"Menor preço qualificado: R$ {best_price:,.2f}"
-            if last_notified is None
-            else f"Quebra de preço: R$ {best_price:,.2f} < R$ {last_notified:,.2f}"
-        )
-        return True, reason, best_price
-    return False, "", best_price
-
-
 def run() -> int:
     state = load_state()
 
@@ -113,12 +58,12 @@ def run() -> int:
         return 1
 
     scan_min = min(o.price_brl for o in offers)
-    source_mins = _per_source_mins(offers)
-    market_signal = max(source_mins.values()) if len(source_mins) >= 2 else scan_min
-    reference = _update_reference(state, market_signal)
+    source_mins = per_source_mins(offers)
+    reference, ref_basis = update_reference(
+        state, scan_min=scan_min, source_mins=source_mins
+    )
 
-    green_target = round(reference * (1 - TARGET_DISCOUNT), 2)
-    yellow_target = round(reference * (1 - YELLOW_DISCOUNT), 2)
+    green_target, yellow_target = compute_thresholds(reference)
     state["target_price_brl"] = green_target
     state["yellow_target_price_brl"] = yellow_target
 
@@ -128,20 +73,29 @@ def run() -> int:
     last_green = _last_notified(state, "last_green_notified_price_brl", "last_notified_price_brl")
     last_yellow = _last_notified(state, "last_yellow_notified_price_brl")
 
-    green_send, green_reason, green_best = _should_notify_tier(green_pool, last_green)
-    yellow_send, yellow_reason, yellow_best = _should_notify_tier(yellow_pool, last_yellow)
+    green_send, green_reason, green_best = should_notify_tier(
+        green_pool, last_green, min_break_brl=GREEN_MIN_BREAK_BRL
+    )
+    yellow_send, yellow_reason, yellow_best = should_notify_tier(
+        yellow_pool, last_yellow, min_break_brl=YELLOW_MIN_BREAK_BRL
+    )
 
     best_overall = min(offers, key=lambda o: o.price_brl)
     state["last_cheapest"] = best_overall.to_dict()
 
     logger.info(
-        "Scan: R$ %.2f | Ref: R$ %.2f | Verde (-%s%%): R$ %.2f | Amarelo (-%s%%): R$ %.2f",
+        "Scan R$ %.2f | Ref R$ %.2f (%s) | Verde < R$ %.2f (-%s%%) | "
+        "Amarelo R$ %.2f–R$ %.2f (+%s%% sobre verde) | pools V:%d A:%d",
         scan_min,
         reference,
+        ref_basis,
+        green_target,
         TARGET_DISCOUNT_PCT,
         green_target,
-        YELLOW_DISCOUNT_PCT,
         yellow_target,
+        YELLOW_BAND_ABOVE_GREEN_PCT,
+        len(green_pool),
+        len(yellow_pool),
     )
 
     sent = False
@@ -154,6 +108,8 @@ def run() -> int:
             reference_price=reference,
             green_target=green_target,
             yellow_target=yellow_target,
+            scan_min=scan_min,
+            reference_basis=ref_basis,
         )
         if sent and green_best is not None:
             state["last_green_notified_price_brl"] = green_best
@@ -168,6 +124,8 @@ def run() -> int:
             reference_price=reference,
             green_target=green_target,
             yellow_target=yellow_target,
+            scan_min=scan_min,
+            reference_basis=ref_basis,
         )
         if sent and yellow_best is not None:
             state["last_yellow_notified_price_brl"] = yellow_best
@@ -185,6 +143,8 @@ def run() -> int:
                 green_target=green_target,
                 yellow_target=yellow_target,
                 alert_pending_reason=pending,
+                scan_min=scan_min,
+                reference_basis=ref_basis,
             )
 
     save_state(state)
