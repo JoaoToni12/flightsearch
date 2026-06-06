@@ -51,7 +51,7 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_FROM: ${{ vars.EMAIL_FROM }}
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL || vars.ALERT_EMAIL }}
-          ALERT_EMAIL_CC: ${{ vars.ALERT_EMAIL_CC || 'thiagofm.br@gmail.com' }}
+          ALERT_EMAIL_CC: ${{ vars.ALERT_EMAIL_CC }}
 
           TARGET_DISCOUNT_PCT: ${{ vars.TARGET_DISCOUNT_PCT || '35' }}
           YELLOW_BAND_ABOVE_GREEN_PCT: ${{ vars.YELLOW_BAND_ABOVE_GREEN_PCT || '6' }}

@@ -58,25 +58,24 @@ Nunca commite tokens. Tudo sensível vai em **Secrets** e **Variables**.
 2. Dashboard → API Key
 3. Secret: `SERPAPI_KEY`
 
-## 4. E-mail — dois destinatários (solução mais rápida)
+## 4. E-mail — segundo destinatário (encaminhamento Gmail)
 
-O Resend com `onboarding@resend.dev` **só envia para o e-mail da conta**. Para o Thiago (ou qualquer CC) receber também, use **Gmail SMTP** (~5 min):
+O jeito mais simples: alertas chegam no **seu** Gmail via Resend; você **encaminha automaticamente** pro Thiago (ou quem for). Zero config no GitHub.
 
-1. Google → Conta → Segurança → **Senhas de app** (exige 2FA)
-2. Gere uma senha para “Mail” / “GitHub Actions”
-3. GitHub → Settings → Secrets → Actions:
+1. Gmail → ⚙️ **Ver todas as configurações** → **Encaminhamento e POP/IMAP**
+2. **Adicionar endereço de encaminhamento** → `thiagofm.br@gmail.com`
+3. Thiago confirma o link que o Google manda
+4. Crie um **filtro** (recomendado — só alertas, não todo o inbox):
+   - **Configurações** → **Filtros e endereços bloqueados** → **Criar filtro**
+   - Assunto contém: `SAO→PAR` (ou remetente contém `resend.dev`)
+   - Ação: **Encaminhar para** `thiagofm.br@gmail.com`
+5. Deixe `ALERT_EMAIL_CC` **vazio** no GitHub (só `ALERT_EMAIL` = seu Gmail)
 
-| Secret | Valor |
-|--------|-------|
-| `SMTP_HOST` | `smtp.gmail.com` |
-| `SMTP_PORT` | `587` |
-| `SMTP_USER` | seu@gmail.com |
-| `SMTP_PASSWORD` | senha de app (16 caracteres) |
+Pronto: Resend continua funcionando; Thiago recebe cópia automática.
 
-4. Variable `EMAIL_FROM` = mesmo `SMTP_USER`
-5. Variable `ALERT_EMAIL_CC` = `thiagofm.br@gmail.com` (já no workflow)
+### Alternativa: SMTP ou CC no GitHub
 
-Com SMTP configurado, o tracker **prioriza SMTP automaticamente** quando há mais de um destinatário. Pode manter `RESEND_API_KEY` para testes solo.
+Só se não quiser encaminhamento — exige senha de app (Gmail) ou domínio verificado (Resend). Ver seções 4b/4c.
 
 ## 4b. E-mail — opção A: Resend (um destinatário)
 
