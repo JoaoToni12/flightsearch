@@ -6,12 +6,9 @@ import logging
 from datetime import datetime, timezone
 
 from config import (
-    GREEN_MIN_BREAK_BRL,
     MARKET_REFERENCE_SEED_BRL,
-    REFERENCE_RECALIBRATE_DAYS,
     TARGET_DISCOUNT,
     YELLOW_BAND_ABOVE_GREEN_PCT,
-    YELLOW_MIN_BREAK_BRL,
 )
 from models import FlightOffer
 
@@ -36,6 +33,34 @@ def per_source_mins(offers: list[FlightOffer]) -> dict[str, float]:
     return mins
 
 
+def per_date_minimums(offers: list[FlightOffer]) -> dict[str, float]:
+    """Menor preço encontrado para cada data de partida no scan."""
+    mins: dict[str, float] = {}
+    for offer in offers:
+        current = mins.get(offer.departure_date)
+        if current is None or offer.price_brl < current:
+            mins[offer.departure_date] = offer.price_brl
+    return mins
+
+
+def reference_signal_from_offers(
+    offers: list[FlightOffer],
+    scan_min: float,
+) -> tuple[float, str]:
+    """Referência = média dos menores preços por data na faixa monitorada."""
+    date_mins = per_date_minimums(offers)
+    if not date_mins:
+        return scan_min, "menor preço do scan"
+
+    values = list(date_mins.values())
+    signal = round(sum(values) / len(values), 2)
+    samples = ", ".join(
+        f"{date[5:]} R$ {price:,.0f}" for date, price in sorted(date_mins.items())
+    )
+    explanation = f"média dos mínimos por data ({len(date_mins)} datas: {samples})"
+    return signal, explanation
+
+
 def compute_thresholds(reference: float) -> tuple[float, float]:
     """Verde = % abaixo da referência CAPES; amarelo = faixa estreita logo acima do verde."""
     green = round(reference * (1 - TARGET_DISCOUNT), 2)
@@ -46,45 +71,42 @@ def compute_thresholds(reference: float) -> tuple[float, float]:
 def update_reference(
     state: dict,
     *,
+    offers: list[FlightOffer],
     scan_min: float | None,
     source_mins: dict[str, float],
 ) -> tuple[float, str]:
     """
-    Referência conservadora = maior mínimo por fonte quando há 2+ fontes.
+    Referência = média dos menores preços por data de partida (faixa 23–27/07).
 
-    SerpApi (Google Flights) costuma refletir varejo; Travelpayouts, promoções em cache.
-    Usamos o teto entre os mínimos para o alvo verde CAPES não disparar cedo demais.
+    Cada data contribui com seu melhor achado; a média representa o mercado típico
+    na janela monitorada, sem distorcer para o teto nem para um único outlier.
     """
     reference = float(state.get("reference_price_brl") or MARKET_REFERENCE_SEED_BRL)
-    updated_at = _parse_iso(state.get("reference_updated_at"))
     now = datetime.now(timezone.utc)
-    stale = updated_at is None or (now - updated_at).days >= REFERENCE_RECALIBRATE_DAYS
 
     if scan_min is None:
-        return reference, "sem ofertas"
+        return reference, state.get("reference_basis") or "sem ofertas"
 
-    if len(source_mins) >= 2:
-        signal = max(source_mins.values())
-        basis = ", ".join(f"{src} R$ {price:,.2f}" for src, price in sorted(source_mins.items()))
-        explanation = f"maior mínimo entre fontes ({basis})"
-    else:
-        signal = scan_min
-        only = next(iter(source_mins.items()))
-        explanation = f"única fonte {only[0]} R$ {only[1]:,.2f}"
+    signal, explanation = reference_signal_from_offers(offers, scan_min)
+    prev = reference
+    reference = signal
 
-    if stale or reference == MARKET_REFERENCE_SEED_BRL:
-        reference = signal
+    if abs(reference - prev) >= 1.0 or prev == MARKET_REFERENCE_SEED_BRL:
         state["reference_updated_at"] = now.replace(microsecond=0).isoformat()
-        logger.info("Referência recalibrada para R$ %.2f — %s", reference, explanation)
-    elif signal > reference:
-        reference = signal
-        state["reference_updated_at"] = now.replace(microsecond=0).isoformat()
-        logger.info("Referência elevada para R$ %.2f — %s", reference, explanation)
+        logger.info(
+            "Referência atualizada R$ %.2f → R$ %.2f — %s",
+            prev,
+            reference,
+            explanation,
+        )
 
     state["reference_price_brl"] = round(reference, 2)
     state["reference_basis"] = explanation
     state["scan_min_brl"] = round(scan_min, 2)
     state["reference_source_mins"] = {k: round(v, 2) for k, v in source_mins.items()}
+    state["reference_date_mins"] = {
+        k: round(v, 2) for k, v in per_date_minimums(offers).items()
+    }
     return reference, explanation
 
 

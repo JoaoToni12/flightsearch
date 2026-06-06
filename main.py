@@ -60,7 +60,7 @@ def run() -> int:
     scan_min = min(o.price_brl for o in offers)
     source_mins = per_source_mins(offers)
     reference, ref_basis = update_reference(
-        state, scan_min=scan_min, source_mins=source_mins
+        state, offers=offers, scan_min=scan_min, source_mins=source_mins
     )
 
     green_target, yellow_target = compute_thresholds(reference)

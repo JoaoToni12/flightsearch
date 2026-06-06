@@ -19,9 +19,9 @@ Monitor de passagens **só ida** (23–27/07/2026) com **duas fontes gratuitas**
 
 ## Preço de referência e alvos (dinâmico)
 
-**Por que a referência pode ser maior que o menor preço do scan?**
+**Como a referência é calculada**
 
-Com duas fontes, a referência CAPES usa o **maior mínimo por fonte** (ex.: Travelpayouts R$ 2.448 vs SerpApi/Google R$ 3.495 → ref. **R$ 3.495**). O scan mostra o melhor achado; a referência é o baseline conservador para não emitir cedo demais.
+Para cada data monitorada (23–27/07), pegamos o **menor preço encontrado** e tiramos a **média** desses mínimos. Ex.: mínimos R$ 2.448 + R$ 2.500 + R$ 2.448 → ref. **R$ 2.465**. O scan mostra o melhor achado global; a referência é o preço típico na faixa de datas.
 
 | Tier | Regra | Frequência alvo (cron 2h) |
 |------|-------|---------------------------|
