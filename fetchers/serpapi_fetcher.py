@@ -92,7 +92,7 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
                     deep,
                     payload["error"],
                 )
-                break
+                continue
 
             batch = _extract_offers(payload, departure_date)
             if batch:
