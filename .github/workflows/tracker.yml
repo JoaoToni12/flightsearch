@@ -1,0 +1,52 @@
+name: Flight Tracker SAO→PAR
+
+on:
+  schedule:
+    # A cada 2h — equilibra free tier SerpApi (1 data/run) + Travelpayouts ilimitado
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: flight-tracker-sao-par
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run flight tracker
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          FLIGHT_TRACKER_STATE: ${{ vars.FLIGHT_TRACKER_STATE }}
+
+          TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          SERPAPI_ENABLED: ${{ vars.SERPAPI_ENABLED || 'true' }}
+          TRAVELPAYOUTS_ENABLED: ${{ vars.TRAVELPAYOUTS_ENABLED || 'true' }}
+
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+
+          TARGET_DISCOUNT_PCT: ${{ vars.TARGET_DISCOUNT_PCT || '35' }}
+          MARKET_REFERENCE_SEED_BRL: ${{ vars.MARKET_REFERENCE_SEED_BRL || '4200' }}
+        run: python main.py
