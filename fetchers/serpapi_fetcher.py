@@ -64,47 +64,77 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
 
     hl = LOCALE.split("-")[0] if LOCALE else "pt"
     offers: list[FlightOffer] = []
+    airport_pairs = [
+        (ORIGIN, DESTINATION),
+        ("GRU", "CDG"),
+        ("VCP", "ORY"),
+    ]
+
     for departure_date in departure_dates:
-        for deep in ("true", "false"):
-            params = {
-                "engine": "google_flights",
-                "api_key": api_key,
-                "departure_id": ORIGIN,
-                "arrival_id": DESTINATION,
-                "outbound_date": departure_date,
-                "type": "2",
-                "currency": CURRENCY,
-                "hl": hl,
-                "deep_search": deep,
-            }
-            try:
-                resp = requests.get(API_URL, params=params, timeout=120)
-                resp.raise_for_status()
-                payload = resp.json()
-            except requests.RequestException as exc:
-                logger.error("SerpApi falhou para %s (deep=%s): %s", departure_date, deep, exc)
-                break
+        date_done = False
+        for dep_id, arr_id in airport_pairs:
 
-            if payload.get("error"):
+            for deep in ("true", "false"):
+                params = {
+                    "engine": "google_flights",
+                    "api_key": api_key,
+                    "departure_id": dep_id,
+                    "arrival_id": arr_id,
+                    "outbound_date": departure_date,
+                    "type": "2",
+                    "currency": CURRENCY,
+                    "hl": hl,
+                    "deep_search": deep,
+                }
+                try:
+                    resp = requests.get(API_URL, params=params, timeout=120)
+                    resp.raise_for_status()
+                    payload = resp.json()
+                except requests.RequestException as exc:
+                    logger.error(
+                        "SerpApi falhou para %s %s→%s (deep=%s): %s",
+                        departure_date,
+                        dep_id,
+                        arr_id,
+                        deep,
+                        exc,
+                    )
+                    break
+
+                if payload.get("error"):
+                    logger.warning(
+                        "SerpApi erro para %s %s→%s (deep=%s): %s",
+                        departure_date,
+                        dep_id,
+                        arr_id,
+                        deep,
+                        payload["error"],
+                    )
+                    continue
+
+                batch = _extract_offers(payload, departure_date)
+                if batch:
+                    logger.info(
+                        "SerpApi: %d ofertas para %s %s→%s (deep_search=%s)",
+                        len(batch),
+                        departure_date,
+                        dep_id,
+                        arr_id,
+                        deep,
+                    )
+                    offers.extend(batch)
+                    date_done = True
+                    break
+
                 logger.warning(
-                    "SerpApi erro para %s (deep=%s): %s",
+                    "SerpApi: 0 ofertas para %s %s→%s (deep_search=%s)",
                     departure_date,
+                    dep_id,
+                    arr_id,
                     deep,
-                    payload["error"],
                 )
-                continue
 
-            batch = _extract_offers(payload, departure_date)
-            if batch:
-                logger.info(
-                    "SerpApi: %d ofertas para %s (deep_search=%s)",
-                    len(batch),
-                    departure_date,
-                    deep,
-                )
-                offers.extend(batch)
+            if date_done:
                 break
-
-            logger.warning("SerpApi: 0 ofertas para %s (deep_search=%s)", departure_date, deep)
 
     return offers

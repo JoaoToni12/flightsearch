@@ -50,7 +50,7 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_FROM: ${{ vars.EMAIL_FROM }}
-          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL || vars.ALERT_EMAIL }}
 
           TARGET_DISCOUNT_PCT: ${{ vars.TARGET_DISCOUNT_PCT || '35' }}
           YELLOW_DISCOUNT_PCT: ${{ vars.YELLOW_DISCOUNT_PCT || '20' }}

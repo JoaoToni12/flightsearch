@@ -46,16 +46,13 @@ PREFERRED_AIRLINES = {
 }
 
 
-def google_flights_link(departure_date: str) -> str:
-    return (
-        "https://www.google.com/travel/flights?"
-        f"q=Flights%20from%20{ORIGIN}%20to%20{DESTINATION}%20on%20{departure_date}"
-        f"&curr={CURRENCY}"
-    )
+def google_flights_link(departure_date: str, origin_airport: str = "", destination_airport: str = "") -> str:
+    from links import google_flights_link as _gf
+
+    return _gf(departure_date, origin_airport, destination_airport)
 
 
-def skyscanner_link(departure_date: str) -> str:
-    return (
-        "https://www.skyscanner.com.br/transporte/passagens-aereas/"
-        f"{ORIGIN.lower()}/{DESTINATION.lower()}/{departure_date.replace('-', '')}/"
-    )
+def skyscanner_link(departure_date: str, origin_airport: str = "", destination_airport: str = "") -> str:
+    from links import skyscanner_link_for as _sky
+
+    return _sky(departure_date, origin_airport, destination_airport)

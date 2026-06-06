@@ -12,13 +12,8 @@ from enum import Enum
 
 import requests
 
-from config import (
-    PREFERRED_DEPARTURE_DATES,
-    TARGET_DISCOUNT_PCT,
-    YELLOW_DISCOUNT_PCT,
-    google_flights_link,
-    skyscanner_link,
-)
+from config import PREFERRED_DEPARTURE_DATES, TARGET_DISCOUNT_PCT, YELLOW_DISCOUNT_PCT
+from links import resolve_links
 from models import FlightOffer
 
 logger = logging.getLogger(__name__)
@@ -87,6 +82,14 @@ def _format_brl(value: float) -> str:
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    if not domain:
+        return "***"
+    visible = local[:2] if len(local) > 2 else "*"
+    return f"{visible}***@{domain}"
+
+
 def _ideal_badge(departure_date: str) -> str:
     if departure_date in PREFERRED_DEPARTURE_DATES:
         return "★ Data ideal"
@@ -103,9 +106,18 @@ def _offer_card_html(offer: FlightOffer, rank: int, theme: AlertTheme) -> str:
         else ""
     )
     route = f"{offer.origin_airport or 'SAO'} → {offer.destination_airport or 'PAR'}"
-    gf = offer.link or google_flights_link(offer.departure_date)
-    sky = skyscanner_link(offer.departure_date)
+    urls = resolve_links(offer)
+    gf = urls["google_flights"]
+    sky = urls["skyscanner"]
+    avia = urls.get("aviasales", "")
     stops = "Direto" if offer.stops == 0 else f"{offer.stops} escala(s)"
+    avia_btn = (
+        f'<a href="{avia}" style="display:inline-block;margin-right:8px;padding:10px 16px;'
+        f'background:#1e293b;color:#ffffff;text-decoration:none;font-size:13px;'
+        f'font-weight:600;border-radius:8px;">Aviasales</a>'
+        if avia
+        else ""
+    )
 
     return f"""
     <tr>
@@ -145,6 +157,7 @@ def _offer_card_html(offer: FlightOffer, rank: int, theme: AlertTheme) -> str:
                 Fonte: {offer.source}
               </div>
               <div style="margin-top:16px;">
+                {avia_btn}
                 <a href="{gf}" style="display:inline-block;margin-right:8px;padding:10px 16px;
                    background:{theme.accent};color:#ffffff;text-decoration:none;font-size:13px;
                    font-weight:600;border-radius:8px;">Google Flights</a>
@@ -184,7 +197,7 @@ def build_tiered_email(
             f"{i}. {_format_brl(offer.price_brl)} — {_format_date_br(offer.departure_date)}{ideal}\n"
             f"   {offer.airline} | {offer.origin_airport or 'SAO'}→{offer.destination_airport or 'PAR'} | "
             f"{_format_duration(offer.duration_min)} | {offer.stops} esc.\n"
-            f"   {offer.link}"
+            f"   Google Flights: {resolve_links(offer)['google_flights']}"
         )
 
     text = f"""{theme.emoji} {theme.label.upper()} — São Paulo → França (só ida)
@@ -324,7 +337,7 @@ def _dispatch_email(subject: str, text: str, html: str) -> bool:
         else:
             logger.error("Configure RESEND_API_KEY ou SMTP_HOST para enviar e-mail.")
             return False
-        logger.info("E-mail enviado para %s", to_email)
+        logger.info("E-mail enviado para %s", _mask_email(to_email))
         return True
     except Exception as exc:
         logger.exception("Falha ao enviar e-mail: %s", exc)
