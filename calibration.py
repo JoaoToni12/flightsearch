@@ -15,15 +15,6 @@ from models import FlightOffer
 logger = logging.getLogger(__name__)
 
 
-def _parse_iso(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
 def per_source_mins(offers: list[FlightOffer]) -> dict[str, float]:
     mins: dict[str, float] = {}
     for offer in offers:
