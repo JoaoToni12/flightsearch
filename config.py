@@ -30,6 +30,10 @@ TARGET_DISCOUNT = TARGET_DISCOUNT_PCT / 100.0
 # Amarelo: faixa estreita acima do verde (~6% → ~2 alertas/dia com cron 2h).
 YELLOW_BAND_ABOVE_GREEN_PCT = float(os.getenv("YELLOW_BAND_ABOVE_GREEN_PCT", "6"))
 
+# Ajuste fino: eleva os tetos verde/amarelo em relação à fórmula base (+10% cada).
+GREEN_THRESHOLD_PREMIUM_PCT = float(os.getenv("GREEN_THRESHOLD_PREMIUM_PCT", "10"))
+YELLOW_THRESHOLD_PREMIUM_PCT = float(os.getenv("YELLOW_THRESHOLD_PREMIUM_PCT", "10"))
+
 # Reenvio só após quebra mínima de preço (evita spam no mesmo patamar).
 YELLOW_MIN_BREAK_BRL = float(os.getenv("YELLOW_MIN_BREAK_BRL", "60"))
 GREEN_MIN_BREAK_BRL = float(os.getenv("GREEN_MIN_BREAK_BRL", "80"))

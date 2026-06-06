@@ -25,8 +25,8 @@ Para cada data monitorada (23–27/07), pegamos o **menor preço encontrado** e 
 
 | Tier | Regra | Frequência alvo (cron 2h) |
 |------|-------|---------------------------|
-| **Verde** (compra) | preço **<** `ref × 65%` (−35%) | ~1 alerta a cada 2–3 dias |
-| **Amarelo** (observação) | faixa **verde ≤ preço < verde×1,06** (+6%) | ~2 alertas/dia no máximo |
+| **Verde** (compra) | preço **<** `ref × 65% × 1,10` | ~1 alerta a cada 2–3 dias |
+| **Amarelo** (observação) | faixa **verde ≤ preço < verde×1,06×1,10** | ~2 alertas/dia no máximo |
 
 Reenvio exige quebra mínima: amarelo Δ≥R$ 60, verde Δ≥R$ 80 vs último alerta do tier.
 

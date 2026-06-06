@@ -6,9 +6,11 @@ import logging
 from datetime import datetime, timezone
 
 from config import (
+    GREEN_THRESHOLD_PREMIUM_PCT,
     MARKET_REFERENCE_SEED_BRL,
     TARGET_DISCOUNT,
     YELLOW_BAND_ABOVE_GREEN_PCT,
+    YELLOW_THRESHOLD_PREMIUM_PCT,
 )
 from models import FlightOffer
 
@@ -53,9 +55,17 @@ def reference_signal_from_offers(
 
 
 def compute_thresholds(reference: float) -> tuple[float, float]:
-    """Verde = % abaixo da referência CAPES; amarelo = faixa estreita logo acima do verde."""
-    green = round(reference * (1 - TARGET_DISCOUNT), 2)
-    yellow = round(green * (1 + YELLOW_BAND_ABOVE_GREEN_PCT / 100), 2)
+    """Verde = % abaixo da ref. CAPES (+premium); amarelo = faixa acima do verde (+premium)."""
+    green = round(
+        reference * (1 - TARGET_DISCOUNT) * (1 + GREEN_THRESHOLD_PREMIUM_PCT / 100),
+        2,
+    )
+    yellow = round(
+        green
+        * (1 + YELLOW_BAND_ABOVE_GREEN_PCT / 100)
+        * (1 + YELLOW_THRESHOLD_PREMIUM_PCT / 100),
+        2,
+    )
     return green, yellow
 
 

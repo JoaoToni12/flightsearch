@@ -28,10 +28,10 @@ def _offer(
     )
 
 
-def test_thresholds_green_unchanged_yellow_narrow_band():
+def test_thresholds_with_ten_percent_premium():
     green, yellow = compute_thresholds(3495.0)
-    assert green == 2271.75
-    assert yellow == round(2271.75 * 1.06, 2)
+    assert green == round(3495.0 * 0.65 * 1.10, 2)
+    assert yellow == round(green * 1.06 * 1.10, 2)
 
 
 def test_reference_is_mean_of_per_date_minimums():
