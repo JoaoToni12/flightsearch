@@ -367,15 +367,26 @@ def _send_smtp(subject: str, text: str, html: str, to_emails: list[str]) -> None
         server.sendmail(from_email, to_emails, msg.as_string())
 
 
+def _smtp_configured() -> bool:
+    return bool(
+        os.getenv("SMTP_HOST") and os.getenv("SMTP_USER") and os.getenv("SMTP_PASSWORD")
+    )
+
+
 def _dispatch_email(subject: str, text: str, html: str) -> bool:
     recipients = _alert_recipients()
     if not recipients:
         logger.error("Nenhum destinatário — configure ALERT_EMAIL (e opcionalmente ALERT_EMAIL_CC).")
         return False
     try:
-        if os.getenv("RESEND_API_KEY"):
+        resend_ready = bool(os.getenv("RESEND_API_KEY"))
+        smtp_ready = _smtp_configured()
+        # Resend em onboarding@resend.dev só entrega para o e-mail da conta — use SMTP com CC.
+        if smtp_ready and (len(recipients) > 1 or not resend_ready):
+            _send_smtp(subject, text, html, recipients)
+        elif resend_ready:
             _send_resend(subject, text, html, recipients)
-        elif os.getenv("SMTP_HOST"):
+        elif smtp_ready:
             _send_smtp(subject, text, html, recipients)
         else:
             logger.error("Configure RESEND_API_KEY ou SMTP_HOST para enviar e-mail.")

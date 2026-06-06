@@ -58,28 +58,36 @@ Nunca commite tokens. Tudo sensível vai em **Secrets** e **Variables**.
 2. Dashboard → API Key
 3. Secret: `SERPAPI_KEY`
 
-## 4. E-mail — opção A: Resend (mais simples)
+## 4. E-mail — dois destinatários (solução mais rápida)
+
+O Resend com `onboarding@resend.dev` **só envia para o e-mail da conta**. Para o Thiago (ou qualquer CC) receber também, use **Gmail SMTP** (~5 min):
+
+1. Google → Conta → Segurança → **Senhas de app** (exige 2FA)
+2. Gere uma senha para “Mail” / “GitHub Actions”
+3. GitHub → Settings → Secrets → Actions:
+
+| Secret | Valor |
+|--------|-------|
+| `SMTP_HOST` | `smtp.gmail.com` |
+| `SMTP_PORT` | `587` |
+| `SMTP_USER` | seu@gmail.com |
+| `SMTP_PASSWORD` | senha de app (16 caracteres) |
+
+4. Variable `EMAIL_FROM` = mesmo `SMTP_USER`
+5. Variable `ALERT_EMAIL_CC` = `thiagofm.br@gmail.com` (já no workflow)
+
+Com SMTP configurado, o tracker **prioriza SMTP automaticamente** quando há mais de um destinatário. Pode manter `RESEND_API_KEY` para testes solo.
+
+## 4b. E-mail — opção A: Resend (um destinatário)
 
 1. https://resend.com/ → conta grátis (3.000 e-mails/mês)
 2. Secret: `RESEND_API_KEY`
-3. Para testes sem domínio próprio, use:
-   - Variable `EMAIL_FROM` = `onboarding@resend.dev`
-   - Só envia para o e-mail da conta Resend
-4. Com domínio verificado: `EMAIL_FROM` = `alertas@seudominio.com`
+3. `onboarding@resend.dev` → só o e-mail da conta Resend
+4. Domínio verificado no Resend → vários destinatários sem SMTP
 
-## 4. E-mail — opção B: SMTP (Gmail / Brevo)
+## 4c. E-mail — opção B: Brevo SMTP
 
-**Gmail** (app password):
-
-| Secret | Exemplo |
-|--------|---------|
-| `SMTP_HOST` | `smtp.gmail.com` |
-| `SMTP_PORT` | `587` |
-| `SMTP_USER` | `seu@gmail.com` |
-| `SMTP_PASSWORD` | senha de app Google |
-| Variable `EMAIL_FROM` | `seu@gmail.com` |
-
-**Brevo** (300 e-mails/dia grátis): use SMTP da Brevo com os mesmos secrets.
+300 e-mails/dia grátis — mesmos secrets `SMTP_*` com host `smtp-relay.brevo.com`.
 
 ## 5. Variáveis do repositório (não sensíveis)
 
