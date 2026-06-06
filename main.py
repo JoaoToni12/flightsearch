@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 
@@ -15,7 +16,7 @@ from config import (
 )
 from fetchers import fetch_all_offers
 from models import FlightOffer
-from notifier import send_alert_email
+from notifier import send_alert_email, send_status_email
 from state_manager import default_state, load_state, save_state
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -161,7 +162,23 @@ def run() -> int:
         if sent:
             state["last_notified_price_brl"] = best.price_brl
     else:
-        logger.info("Sem alerta (preço acima do alvo e sem quebra).")
+        pending = (
+            f"R$ {best.price_brl:,.2f} ainda acima do alvo R$ {target:,.2f}"
+            + (
+                f" e do último alerta R$ {last_notified_f:,.2f}"
+                if last_notified_f is not None
+                else " (nenhum alerta enviado ainda)"
+            )
+        )
+        logger.info("Sem alerta (%s).", pending)
+        if os.getenv("TEST_EMAIL", "").lower() == "true":
+            send_status_email(
+                best,
+                reference_price=reference,
+                target_price=target,
+                sources_summary=_sources_summary(offers),
+                alert_pending_reason=pending,
+            )
 
     save_state(state)
     return 0

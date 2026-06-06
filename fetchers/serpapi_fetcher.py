@@ -62,24 +62,49 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
         logger.warning("SERPAPI_KEY ausente — Google Flights via SerpApi ignorado.")
         return []
 
+    hl = LOCALE.split("-")[0] if LOCALE else "pt"
     offers: list[FlightOffer] = []
     for departure_date in departure_dates:
-        params = {
-            "engine": "google_flights",
-            "api_key": api_key,
-            "departure_id": ORIGIN,
-            "arrival_id": DESTINATION,
-            "outbound_date": departure_date,
-            "type": "2",
-            "currency": CURRENCY,
-            "hl": LOCALE,
-            "deep_search": "true",
-        }
-        try:
-            resp = requests.get(API_URL, params=params, timeout=120)
-            resp.raise_for_status()
-            offers.extend(_extract_offers(resp.json(), departure_date))
-        except requests.RequestException as exc:
-            logger.error("SerpApi falhou para %s: %s", departure_date, exc)
+        for deep in ("true", "false"):
+            params = {
+                "engine": "google_flights",
+                "api_key": api_key,
+                "departure_id": ORIGIN,
+                "arrival_id": DESTINATION,
+                "outbound_date": departure_date,
+                "type": "2",
+                "currency": CURRENCY,
+                "hl": hl,
+                "deep_search": deep,
+            }
+            try:
+                resp = requests.get(API_URL, params=params, timeout=120)
+                resp.raise_for_status()
+                payload = resp.json()
+            except requests.RequestException as exc:
+                logger.error("SerpApi falhou para %s (deep=%s): %s", departure_date, deep, exc)
+                break
+
+            if payload.get("error"):
+                logger.warning(
+                    "SerpApi erro para %s (deep=%s): %s",
+                    departure_date,
+                    deep,
+                    payload["error"],
+                )
+                break
+
+            batch = _extract_offers(payload, departure_date)
+            if batch:
+                logger.info(
+                    "SerpApi: %d ofertas para %s (deep_search=%s)",
+                    len(batch),
+                    departure_date,
+                    deep,
+                )
+                offers.extend(batch)
+                break
+
+            logger.warning("SerpApi: 0 ofertas para %s (deep_search=%s)", departure_date, deep)
 
     return offers

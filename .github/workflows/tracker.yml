@@ -5,6 +5,11 @@ on:
     # A cada 2h — equilibra free tier SerpApi (1 data/run) + Travelpayouts ilimitado
     - cron: "0 */2 * * *"
   workflow_dispatch:
+    inputs:
+      test_email:
+        description: "Enviar e-mail de status (valida Resend/SMTP)"
+        type: boolean
+        default: false
 
 concurrency:
   group: flight-tracker-sao-par
@@ -49,4 +54,5 @@ jobs:
 
           TARGET_DISCOUNT_PCT: ${{ vars.TARGET_DISCOUNT_PCT || '35' }}
           MARKET_REFERENCE_SEED_BRL: ${{ vars.MARKET_REFERENCE_SEED_BRL || '4200' }}
+          TEST_EMAIL: ${{ inputs.test_email || 'false' }}
         run: python main.py

@@ -105,6 +105,8 @@ def _send_resend(subject: str, text: str, html: str, to_email: str) -> None:
         },
         timeout=30,
     )
+    if not resp.ok:
+        logger.error("Resend HTTP %s: %s", resp.status_code, resp.text)
     resp.raise_for_status()
 
 
@@ -126,6 +128,59 @@ def _send_smtp(subject: str, text: str, html: str, to_email: str) -> None:
         server.starttls()
         server.login(user, password)
         server.sendmail(from_email, [to_email], msg.as_string())
+
+
+def send_status_email(
+    offer: FlightOffer,
+    *,
+    reference_price: float,
+    target_price: float,
+    sources_summary: str,
+    alert_pending_reason: str,
+) -> bool:
+    """E-mail informativo (não é alerta de preço) — útil para validar Resend/SMTP."""
+    to_email = os.getenv("ALERT_EMAIL")
+    if not to_email:
+        logger.error("ALERT_EMAIL não configurado.")
+        return False
+
+    subject = (
+        f"[flightsearch] Monitor ativo — menor preço R$ {offer.price_brl:,.0f} "
+        f"(alvo R$ {target_price:,.0f})"
+    )
+    text = f"""Monitor flightsearch — status da varredura
+
+Menor preço agora: R$ {offer.price_brl:,.2f}
+Referência de mercado: R$ {reference_price:,.2f}
+Preço-alvo para alerta: R$ {target_price:,.2f}
+
+Melhor oferta:
+  {offer.departure_date} | {offer.airline} | {offer.stops} escala(s) | {offer.source}
+
+Por que não alertou:
+  {alert_pending_reason}
+
+Fontes:
+{sources_summary}
+
+---
+Este é um e-mail de status/teste. Alertas reais só quando o preço cruzar o alvo.
+"""
+    html = f"<html><body><pre>{text}</pre></body></html>"
+
+    try:
+        if os.getenv("RESEND_API_KEY"):
+            _send_resend(subject, text, html, to_email)
+        elif os.getenv("SMTP_HOST"):
+            _send_smtp(subject, text, html, to_email)
+        else:
+            logger.error("Configure RESEND_API_KEY ou SMTP_HOST para enviar e-mail.")
+            return False
+        logger.info("E-mail de status enviado para %s", to_email)
+        return True
+    except Exception as exc:
+        logger.exception("Falha ao enviar e-mail de status: %s", exc)
+        return False
 
 
 def send_alert_email(
