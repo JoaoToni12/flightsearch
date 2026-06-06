@@ -93,6 +93,20 @@ def _mask_email(email: str) -> str:
     return f"{visible}***@{domain}"
 
 
+def _alert_recipients() -> list[str]:
+    """ALERT_EMAIL e ALERT_EMAIL_CC aceitam vários endereços separados por vírgula."""
+    seen: set[str] = set()
+    recipients: list[str] = []
+    for var in ("ALERT_EMAIL", "ALERT_EMAIL_CC"):
+        raw = os.getenv(var, "")
+        for part in raw.replace(";", ",").split(","):
+            email = part.strip().lower()
+            if email and email not in seen:
+                seen.add(email)
+                recipients.append(email)
+    return recipients
+
+
 def _ideal_badge(departure_date: str) -> str:
     if departure_date in PREFERRED_DEPARTURE_DATES:
         return "★ Data ideal"
@@ -291,7 +305,7 @@ flightsearch · monitor automático
     return subject, text, html
 
 
-def _send_resend(subject: str, text: str, html: str, to_email: str) -> None:
+def _send_resend(subject: str, text: str, html: str, to_emails: list[str]) -> None:
     api_key = os.environ["RESEND_API_KEY"]
     from_email = os.getenv("EMAIL_FROM", "onboarding@resend.dev")
     ref_id = str(uuid.uuid4())
@@ -300,7 +314,7 @@ def _send_resend(subject: str, text: str, html: str, to_email: str) -> None:
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={
             "from": from_email,
-            "to": [to_email],
+            "to": to_emails,
             "subject": subject,
             "text": text,
             "html": html,
@@ -316,7 +330,7 @@ def _send_resend(subject: str, text: str, html: str, to_email: str) -> None:
     resp.raise_for_status()
 
 
-def _send_smtp(subject: str, text: str, html: str, to_email: str) -> None:
+def _send_smtp(subject: str, text: str, html: str, to_emails: list[str]) -> None:
     host = os.environ["SMTP_HOST"]
     port = int(os.getenv("SMTP_PORT", "587"))
     user = os.environ["SMTP_USER"]
@@ -326,7 +340,7 @@ def _send_smtp(subject: str, text: str, html: str, to_email: str) -> None:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = from_email
-    msg["To"] = to_email
+    msg["To"] = ", ".join(to_emails)
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain="flightsearch.local")
     msg["X-Entity-Ref-ID"] = str(uuid.uuid4())
@@ -336,23 +350,24 @@ def _send_smtp(subject: str, text: str, html: str, to_email: str) -> None:
     with smtplib.SMTP(host, port, timeout=30) as server:
         server.starttls()
         server.login(user, password)
-        server.sendmail(from_email, [to_email], msg.as_string())
+        server.sendmail(from_email, to_emails, msg.as_string())
 
 
 def _dispatch_email(subject: str, text: str, html: str) -> bool:
-    to_email = os.getenv("ALERT_EMAIL")
-    if not to_email:
-        logger.error("ALERT_EMAIL não configurado.")
+    recipients = _alert_recipients()
+    if not recipients:
+        logger.error("Nenhum destinatário — configure ALERT_EMAIL (e opcionalmente ALERT_EMAIL_CC).")
         return False
     try:
         if os.getenv("RESEND_API_KEY"):
-            _send_resend(subject, text, html, to_email)
+            _send_resend(subject, text, html, recipients)
         elif os.getenv("SMTP_HOST"):
-            _send_smtp(subject, text, html, to_email)
+            _send_smtp(subject, text, html, recipients)
         else:
             logger.error("Configure RESEND_API_KEY ou SMTP_HOST para enviar e-mail.")
             return False
-        logger.info("E-mail enviado para %s", _mask_email(to_email))
+        masked = ", ".join(_mask_email(email) for email in recipients)
+        logger.info("E-mail enviado para %s", masked)
         return True
     except Exception as exc:
         logger.exception("Falha ao enviar e-mail: %s", exc)

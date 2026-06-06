@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 from urllib.parse import quote, urlencode
 
-from config import CURRENCY, DESTINATION, LOCALE, ORIGIN
+from config import CURRENCY, DESTINATION, LOCALE, MARKET, ORIGIN
 from models import FlightOffer
 
-AVIASALES_BASE = "https://www.aviasales.com.br"
+# aviasales.com.br está fora do ar; domínio global funciona com locale/currency BR.
+AVIASALES_BASE = "https://www.aviasales.com"
 
 
 def _airports(origin_airport: str, destination_airport: str) -> tuple[str, str]:
@@ -38,13 +39,19 @@ def aviasales_link(
     origin_airport: str = "",
     destination_airport: str = "",
 ) -> str:
-    """URL limpa Aviasales — sem tokens expirados da API cacheada."""
+    """URL Aviasales estável — segmento só ida no domínio .com (não .com.br)."""
     origin, dest = _airports(origin_airport, destination_airport)
     segment = f"{origin}{_ddmm(departure_date)}{dest}1"
+    locale = (LOCALE or "pt-BR").split("-")[0]
+    params: dict[str, str] = {
+        "currency": CURRENCY,
+        "locale": locale,
+        "market": MARKET,
+    }
     marker = os.getenv("TRAVELPAYOUTS_MARKER", "").strip()
     if marker:
-        return f"{AVIASALES_BASE}/search/{segment}?marker={quote(marker)}"
-    return f"{AVIASALES_BASE}/search/{segment}"
+        params["marker"] = marker
+    return f"{AVIASALES_BASE}/search/{segment}?{urlencode(params)}"
 
 
 def skyscanner_link_for(

@@ -15,11 +15,20 @@ def test_google_flights_one_way_query():
     assert "/search" not in url or "q=" in url
 
 
-def test_aviasales_clean_segment_one_way():
+def test_aviasales_uses_global_domain_not_com_br():
     url = aviasales_link("2026-07-24", "VCP", "ORY")
-    assert url == "https://www.aviasales.com.br/search/VCP2407ORY1"
+    assert url.startswith("https://www.aviasales.com/search/VCP2407ORY1?")
+    assert "aviasales.com.br" not in url
     assert "expected_price" not in url
     assert "search_date" not in url
+    assert "currency=BRL" in url
+    assert "locale=pt" in url
+    assert "market=br" in url
+
+
+def test_aviasales_city_codes_fallback():
+    url = aviasales_link("2026-07-25", "", "")
+    assert "/search/SAO2507PAR1?" in url
 
 
 def test_skyscanner_one_way_rtn_zero():
@@ -42,7 +51,8 @@ def test_resolve_never_uses_stale_aviasales_params():
     )
     urls = resolve_links(offer)
     assert "oneway" in urls["google_flights"].lower()
-    assert urls["aviasales"] == "https://www.aviasales.com.br/search/VCP2407ORY1"
+    assert urls["aviasales"].startswith("https://www.aviasales.com/search/VCP2407ORY1?")
+    assert "aviasales.com.br" not in urls["aviasales"]
     assert "expected_price" not in urls["aviasales"]
 
 
