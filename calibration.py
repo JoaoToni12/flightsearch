@@ -10,7 +10,6 @@ from config import (
     MARKET_REFERENCE_SEED_BRL,
     TARGET_DISCOUNT,
     YELLOW_BAND_ABOVE_GREEN_PCT,
-    YELLOW_CEILING_REFERENCE_PCT,
     YELLOW_THRESHOLD_PREMIUM_PCT,
 )
 from models import FlightOffer
@@ -56,19 +55,17 @@ def reference_signal_from_offers(
 
 
 def compute_thresholds(reference: float) -> tuple[float, float]:
-    """Verde = % abaixo da ref. CAPES (+premium); amarelo até teto de mercado (ref.)."""
+    """Verde = % abaixo da ref. CAPES (+premium); amarelo = faixa estreita acima do verde."""
     green = round(
         reference * (1 - TARGET_DISCOUNT) * (1 + GREEN_THRESHOLD_PREMIUM_PCT / 100),
         2,
     )
-    band_yellow = round(
+    yellow = round(
         green
         * (1 + YELLOW_BAND_ABOVE_GREEN_PCT / 100)
         * (1 + YELLOW_THRESHOLD_PREMIUM_PCT / 100),
         2,
     )
-    market_ceiling = round(reference * (YELLOW_CEILING_REFERENCE_PCT / 100), 2)
-    yellow = max(band_yellow, market_ceiling)
     return green, yellow
 
 
@@ -148,17 +145,9 @@ def should_notify_tier(
         )
         return True, reason, best_price
     elapsed = _hours_since(last_notified_at)
-    if resend_hours:
-        if elapsed is not None and elapsed >= resend_hours:
-            reason = (
-                f"Realerta de mercado: R$ {best_price:,.2f} "
-                f"(último alerta há {elapsed:.0f}h)"
-            )
-            return True, reason, best_price
-        if last_notified_at is None:
-            reason = (
-                f"Observação de mercado: R$ {best_price:,.2f} "
-                f"(faixa amarela recalibrada)"
-            )
-            return True, reason, best_price
+    if resend_hours and elapsed is not None and elapsed >= resend_hours:
+        reason = (
+            f"Realerta: R$ {best_price:,.2f} (último alerta há {elapsed:.0f}h)"
+        )
+        return True, reason, best_price
     return False, "", best_price

@@ -79,12 +79,13 @@ def test_top_offers_prefers_fewer_stops_at_same_price():
     assert picks[0].stops == 0
 
 
-def test_yellow_pool_includes_market_prices_near_reference():
-    green_max = 1800.0
-    yellow_max = 2558.0  # teto ~102% da referência
+def test_yellow_pool_excludes_market_prices_above_narrow_band():
+    green_max = 1794.0
+    yellow_max = 2091.0
     offers = [
-        _offer(2448, "2026-07-24"),
-        _offer(2520, "2026-07-25"),
+        _offer(1900, "2026-07-24"),
+        _offer(2448, "2026-07-25"),
     ]
     yellow = filter_yellow_only(offers, yellow_max, green_max)
-    assert len(yellow) == 2
+    assert len(yellow) == 1
+    assert yellow[0].price_brl == 1900

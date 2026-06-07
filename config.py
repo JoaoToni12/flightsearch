@@ -27,12 +27,11 @@ MARKET_REFERENCE_SEED_BRL = float(os.getenv("MARKET_REFERENCE_SEED_BRL", "4200")
 TARGET_DISCOUNT_PCT = float(os.getenv("TARGET_DISCOUNT_PCT", "35"))
 TARGET_DISCOUNT = TARGET_DISCOUNT_PCT / 100.0
 
-# Amarelo: faixa acima do verde; teto sobe até % da referência (observação de mercado).
+# Amarelo: faixa estreita acima do verde (~6% → observação sem inflar ao preço de mercado).
 YELLOW_BAND_ABOVE_GREEN_PCT = float(os.getenv("YELLOW_BAND_ABOVE_GREEN_PCT", "6"))
-YELLOW_CEILING_REFERENCE_PCT = float(os.getenv("YELLOW_CEILING_REFERENCE_PCT", "102"))
 
-# Realerta amarelo após N horas mesmo sem quebra de preço (mercado estável).
-YELLOW_RESEND_HOURS = float(os.getenv("YELLOW_RESEND_HOURS", "24"))
+# Realerta amarelo após N horas na faixa estreita (0 = desligado).
+YELLOW_RESEND_HOURS = float(os.getenv("YELLOW_RESEND_HOURS", "0"))
 
 # Ajuste fino: eleva os tetos verde/amarelo em relação à fórmula base (+10% cada).
 GREEN_THRESHOLD_PREMIUM_PCT = float(os.getenv("GREEN_THRESHOLD_PREMIUM_PCT", "10"))

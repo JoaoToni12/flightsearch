@@ -33,16 +33,16 @@ A Data API **sempre** serve cache Aviasales (até 48h). Não há reset gratuito.
 
 Para cada data monitorada (23–27/07), pegamos o **menor preço encontrado** e tiramos a **média** desses mínimos. Ex.: mínimos R$ 2.448 + R$ 2.500 + R$ 2.448 → ref. **R$ 2.465**. O scan mostra o melhor achado global; a referência é o preço típico na faixa de datas.
 
-| Tier | Regra | Frequência alvo (cron 1h) |
-|------|-------|---------------------------|
-| **Verde** (compra) | preço **<** `ref × 65% × 1,10` | quando acha oportunidade CAPES |
-| **Amarelo** (observação) | **verde ≤ preço < max(faixa estreita, ref×102%)** | mercado típico (~R$ 2.400–2.550) |
+| Tier | Regra | Exemplo (ref. R$ 2.508) |
+|------|-------|--------------------------|
+| **Verde** (compra CAPES) | preço **<** `ref × 65% × 1,10` | **< R$ 1.794** |
+| **Amarelo** (observação) | `verde ≤ preço < verde × 1,06 × 1,10` | **R$ 1.794 – 2.091** |
 
-Reenvio: amarelo Δ≥R$ 60 ou **realerta a cada 24h** (`YELLOW_RESEND_HOURS`); verde Δ≥R$ 80.
+Reenvio exige quebra: amarelo Δ≥R$ 60, verde Δ≥R$ 80 vs último alerta do tier.
 
 E-mails mostram **horário de saída/chegada** quando a API retorna; ranking prioriza datas 24/25, voos **diretos** e menos escalas.
 
-Variáveis opcionais: `TARGET_DISCOUNT_PCT`, `YELLOW_CEILING_REFERENCE_PCT`, `YELLOW_RESEND_HOURS`, `MAX_STOPS_PREFERENCE`, `HUNT_PRICE_MIN_PCT`, `HUNT_PRICE_MAX_PCT`.
+Variáveis opcionais: `TARGET_DISCOUNT_PCT`, `YELLOW_BAND_ABOVE_GREEN_PCT`, `YELLOW_MIN_BREAK_BRL`, `GREEN_MIN_BREAK_BRL`.
 
 ## 1. Criar repositório público
 
