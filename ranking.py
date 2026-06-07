@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from config import PREFERRED_DEPARTURE_DATES, TOP_OFFERS_COUNT
+from config import MAX_STOPS_PREFERENCE, PREFERRED_DEPARTURE_DATES, TOP_OFFERS_COUNT
 from models import FlightOffer
+
+
+def _stops_penalty(stops: int) -> int:
+    """Menor = melhor. Penaliza acima do preferido sem excluir do pool."""
+    if stops <= MAX_STOPS_PREFERENCE:
+        return stops
+    return stops + 10
 
 
 def _sort_key(offer: FlightOffer) -> tuple:
     preferred = set(PREFERRED_DEPARTURE_DATES)
     ideal_date = 0 if offer.departure_date in preferred else 1
-    return (ideal_date, offer.price_brl, offer.stops)
+    direct_bonus = 0 if offer.stops == 0 else 1
+    return (ideal_date, direct_bonus, _stops_penalty(offer.stops), offer.price_brl)
 
 
 def dedupe_offers(offers: list[FlightOffer]) -> list[FlightOffer]:

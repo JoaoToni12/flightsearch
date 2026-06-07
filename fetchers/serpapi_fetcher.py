@@ -10,6 +10,7 @@ import requests
 from config import CURRENCY, DESTINATION, LOCALE, ORIGIN, SERPAPI_ENABLED
 from links import google_flights_link
 from models import FlightOffer
+from times import split_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,16 @@ def _first_airline(flight: dict) -> str:
     if segments:
         return str(segments[0].get("airline") or "N/A")
     return "N/A"
+
+
+def _segment_times(segments: list[dict]) -> tuple[str, str, str]:
+    if not segments:
+        return "", "", ""
+    dep_raw = (segments[0].get("departure_airport") or {}).get("time", "")
+    arr_raw = (segments[-1].get("arrival_airport") or {}).get("time", "")
+    dep_date, dep_time, _ = split_datetime(str(dep_raw))
+    arr_date, arr_time, _ = split_datetime(str(arr_raw))
+    return dep_time, arr_time, arr_date
 
 
 def _extract_offers(payload: dict, departure_date: str) -> list[FlightOffer]:
@@ -47,6 +58,7 @@ def _extract_offers(payload: dict, departure_date: str) -> list[FlightOffer]:
             segments = flight.get("flights") or []
             seg_origin = segments[0].get("departure_airport", {}).get("id", origin) if segments else origin
             seg_dest = segments[-1].get("arrival_airport", {}).get("id", dest) if segments else dest
+            dep_time, arr_time, arr_date = _segment_times(segments)
             offers.append(
                 FlightOffer(
                     price_brl=float(price),
@@ -58,6 +70,9 @@ def _extract_offers(payload: dict, departure_date: str) -> list[FlightOffer]:
                     link=google_flights_link(departure_date, seg_origin, seg_dest),
                     origin_airport=seg_origin,
                     destination_airport=seg_dest,
+                    departure_time=dep_time,
+                    arrival_time=arr_time,
+                    arrival_date=arr_date,
                     raw=flight,
                 )
             )
@@ -79,6 +94,9 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
         (ORIGIN, DESTINATION),
         ("GRU", "CDG"),
         ("VCP", "ORY"),
+        ("GRU", "ORY"),
+        ("VCP", "CDG"),
+        ("CGH", "CDG"),
     ]
 
     for departure_date in departure_dates:

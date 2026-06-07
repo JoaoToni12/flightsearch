@@ -18,6 +18,7 @@ import requests
 from config import PREFERRED_DEPARTURE_DATES, TARGET_DISCOUNT_PCT, YELLOW_BAND_ABOVE_GREEN_PCT
 from links import resolve_links
 from models import FlightOffer
+from times import format_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,18 @@ def _offer_card_html(offer: FlightOffer, rank: int, theme: AlertTheme) -> str:
     sky = urls["skyscanner"]
     avia = urls.get("aviasales", "")
     stops = "Direto" if offer.stops == 0 else f"{offer.stops} escala(s)"
+    schedule = format_schedule(
+        offer.departure_date,
+        offer.departure_time,
+        offer.arrival_time,
+        offer.arrival_date,
+    )
+    schedule_html = (
+        f'<tr><td colspan="3" style="padding:8px 0 0 0;">Horário<br>'
+        f'<strong style="color:#0f172a;">{schedule}</strong></td></tr>'
+        if schedule
+        else ""
+    )
     avia_btn = (
         f'<a href="{avia}" style="display:inline-block;margin-right:8px;padding:10px 16px;'
         f'background:#1e293b;color:#ffffff;text-decoration:none;font-size:13px;'
@@ -169,6 +182,7 @@ def _offer_card_html(offer: FlightOffer, rank: int, theme: AlertTheme) -> str:
                   <td width="33%" style="padding:8px 0;">Duração<br><strong style="color:#0f172a;">{_format_duration(offer.duration_min)}</strong></td>
                   <td width="33%" style="padding:8px 0;">Paradas<br><strong style="color:#0f172a;">{stops}</strong></td>
                 </tr>
+                {schedule_html}
               </table>
               <div style="margin-top:14px;font-size:12px;color:#94a3b8;">
                 Fonte: {offer.source}
@@ -214,10 +228,18 @@ def build_tiered_email(
     cards_text = []
     for i, offer in enumerate(offers, 1):
         ideal = " [DATA IDEAL]" if offer.departure_date in PREFERRED_DEPARTURE_DATES else ""
+        schedule = format_schedule(
+            offer.departure_date,
+            offer.departure_time,
+            offer.arrival_time,
+            offer.arrival_date,
+        )
+        schedule_line = f"   Horário: {schedule}\n" if schedule else ""
         cards_text.append(
             f"{i}. {_format_brl(offer.price_brl)} — {_format_date_br(offer.departure_date)}{ideal}\n"
             f"   {offer.airline} | {offer.origin_airport or 'SAO'}→{offer.destination_airport or 'PAR'} | "
             f"{_format_duration(offer.duration_min)} | {offer.stops} esc.\n"
+            f"{schedule_line}"
             f"   Google Flights: {resolve_links(offer)['google_flights']}\n"
             f"   Aviasales: {resolve_links(offer).get('aviasales', '—')}"
         )
@@ -244,7 +266,10 @@ flightsearch · monitor automático
 """
 
     cards_html = "".join(_offer_card_html(o, i, theme) for i, o in enumerate(offers, 1))
-    ideal_note = "Priorizamos voos em <strong>24/07</strong> e <strong>25/07</strong> quando o preço é equivalente."
+    ideal_note = (
+        "Priorizamos <strong>24/07</strong> e <strong>25/07</strong>, depois voos "
+        "<strong>diretos</strong> ou com menos escalas."
+    )
 
     html = f"""<!DOCTYPE html>
 <html lang="pt-BR">

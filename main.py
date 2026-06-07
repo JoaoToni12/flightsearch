@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
 from calibration import (
     compute_thresholds,
@@ -18,10 +19,12 @@ from config import (
     HUNT_PRICE_MAX_PCT,
     HUNT_PRICE_MIN_PCT,
     MARKET_REFERENCE_SEED_BRL,
+    SERPAPI_DATE_PRIORITY,
     SERPAPI_EVERY_N_RUNS,
     TARGET_DISCOUNT_PCT,
     YELLOW_BAND_ABOVE_GREEN_PCT,
     YELLOW_MIN_BREAK_BRL,
+    YELLOW_RESEND_HOURS,
 )
 from fetchers import fetch_all_offers
 from notifier import AlertLevel, send_status_email, send_tiered_alert
@@ -46,9 +49,10 @@ def _live_source_dates_for_run(state: dict) -> list[str]:
         )
         return []
 
-    cursor = int(state.get("serpapi_date_cursor") or 0) % len(DEPARTURE_DATES)
-    chosen = [DEPARTURE_DATES[cursor]]
-    state["serpapi_date_cursor"] = (cursor + 1) % len(DEPARTURE_DATES)
+    priority = SERPAPI_DATE_PRIORITY or DEPARTURE_DATES
+    cursor = int(state.get("serpapi_date_cursor") or 0) % len(priority)
+    chosen = [priority[cursor]]
+    state["serpapi_date_cursor"] = (cursor + 1) % len(priority)
     logger.info("SerpApi Google Flights para %s (run #%d)", chosen[0], run_counter)
     return chosen
 
@@ -128,7 +132,11 @@ def run() -> int:
         green_pool, last_green, min_break_brl=GREEN_MIN_BREAK_BRL
     )
     yellow_send, yellow_reason, yellow_best = should_notify_tier(
-        yellow_pool, last_yellow, min_break_brl=YELLOW_MIN_BREAK_BRL
+        yellow_pool,
+        last_yellow,
+        min_break_brl=YELLOW_MIN_BREAK_BRL,
+        last_notified_at=state.get("last_yellow_notified_at"),
+        resend_hours=YELLOW_RESEND_HOURS,
     )
 
     best_overall = min(offers, key=lambda o: o.price_brl)
@@ -180,6 +188,9 @@ def run() -> int:
         )
         if sent and yellow_best is not None:
             state["last_yellow_notified_price_brl"] = yellow_best
+            state["last_yellow_notified_at"] = (
+                datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+            )
         logger.info("Alerta AMARELO disparado (%d opções).", len(picks))
     else:
         pending = (

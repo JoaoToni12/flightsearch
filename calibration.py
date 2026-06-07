@@ -10,6 +10,7 @@ from config import (
     MARKET_REFERENCE_SEED_BRL,
     TARGET_DISCOUNT,
     YELLOW_BAND_ABOVE_GREEN_PCT,
+    YELLOW_CEILING_REFERENCE_PCT,
     YELLOW_THRESHOLD_PREMIUM_PCT,
 )
 from models import FlightOffer
@@ -55,17 +56,19 @@ def reference_signal_from_offers(
 
 
 def compute_thresholds(reference: float) -> tuple[float, float]:
-    """Verde = % abaixo da ref. CAPES (+premium); amarelo = faixa acima do verde (+premium)."""
+    """Verde = % abaixo da ref. CAPES (+premium); amarelo até teto de mercado (ref.)."""
     green = round(
         reference * (1 - TARGET_DISCOUNT) * (1 + GREEN_THRESHOLD_PREMIUM_PCT / 100),
         2,
     )
-    yellow = round(
+    band_yellow = round(
         green
         * (1 + YELLOW_BAND_ABOVE_GREEN_PCT / 100)
         * (1 + YELLOW_THRESHOLD_PREMIUM_PCT / 100),
         2,
     )
+    market_ceiling = round(reference * (YELLOW_CEILING_REFERENCE_PCT / 100), 2)
+    yellow = max(band_yellow, market_ceiling)
     return green, yellow
 
 
@@ -111,11 +114,26 @@ def update_reference(
     return reference, explanation
 
 
+def _hours_since(iso_timestamp: str | None) -> float | None:
+    if not iso_timestamp:
+        return None
+    try:
+        then = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
+        if then.tzinfo is None:
+            then = then.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - then
+        return delta.total_seconds() / 3600
+    except ValueError:
+        return None
+
+
 def should_notify_tier(
     qualifying: list[FlightOffer],
     last_notified: float | None,
     *,
     min_break_brl: float,
+    last_notified_at: str | None = None,
+    resend_hours: float | None = None,
 ) -> tuple[bool, str, float | None]:
     if not qualifying:
         return False, "", None
@@ -129,4 +147,18 @@ def should_notify_tier(
             f"(Δ R$ {last_notified - best_price:,.2f} vs último alerta)"
         )
         return True, reason, best_price
+    elapsed = _hours_since(last_notified_at)
+    if resend_hours:
+        if elapsed is not None and elapsed >= resend_hours:
+            reason = (
+                f"Realerta de mercado: R$ {best_price:,.2f} "
+                f"(último alerta há {elapsed:.0f}h)"
+            )
+            return True, reason, best_price
+        if last_notified_at is None:
+            reason = (
+                f"Observação de mercado: R$ {best_price:,.2f} "
+                f"(faixa amarela recalibrada)"
+            )
+            return True, reason, best_price
     return False, "", best_price

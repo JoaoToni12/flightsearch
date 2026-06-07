@@ -18,6 +18,9 @@ class FlightOffer:
     origin_airport: str = ""
     destination_airport: str = ""
     flight_number: str = ""
+    departure_time: str = ""
+    arrival_time: str = ""
+    arrival_date: str = ""
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def to_dict(self) -> dict[str, Any]:

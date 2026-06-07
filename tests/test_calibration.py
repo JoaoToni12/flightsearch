@@ -31,7 +31,22 @@ def _offer(
 def test_thresholds_with_ten_percent_premium():
     green, yellow = compute_thresholds(3495.0)
     assert green == round(3495.0 * 0.65 * 1.10, 2)
-    assert yellow == round(green * 1.06 * 1.10, 2)
+    band = round(green * 1.06 * 1.10, 2)
+    assert yellow == max(band, round(3495.0 * 1.02, 2))
+
+
+def test_yellow_resend_when_legacy_state_has_no_timestamp():
+    offers = [_offer(2448)]
+    send, reason, best = should_notify_tier(
+        offers,
+        2448.0,
+        min_break_brl=60,
+        last_notified_at=None,
+        resend_hours=24,
+    )
+    assert send is True
+    assert best == 2448
+    assert "mercado" in reason.lower() or "faixa" in reason.lower()
 
 
 def test_reference_is_mean_of_per_date_minimums():

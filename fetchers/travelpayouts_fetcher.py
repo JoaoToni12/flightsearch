@@ -10,13 +10,51 @@ import requests
 from config import CURRENCY, DESTINATION, LOCALE, MARKET, ORIGIN, TRAVELPAYOUTS_ENABLED
 from links import aviasales_link
 from models import FlightOffer
+from times import split_datetime
 
 logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
 
 
-def fetch_travelpayouts_offers(departure_dates: list[str]) -> list[FlightOffer]:
+def _offer_from_row(row: dict, departure_date: str, *, source: str) -> FlightOffer | None:
+    price = row.get("price")
+    if price is None:
+        return None
+    airline = (row.get("airline") or "N/A").upper()
+    dep_raw = row.get("departure_at") or departure_date
+    dep_date, dep_time, _ = split_datetime(str(dep_raw))
+    if not dep_date:
+        dep_date = departure_date
+    arr_raw = row.get("arrival_at") or row.get("return_at") or ""
+    arr_date, arr_time, _ = split_datetime(str(arr_raw))
+    transfers = int(row.get("transfers") or 0)
+    duration = row.get("duration_to") or row.get("duration")
+    origin_airport = row.get("origin_airport") or ""
+    dest_airport = row.get("destination_airport") or ""
+    return FlightOffer(
+        price_brl=float(price),
+        airline=airline,
+        departure_date=dep_date,
+        duration_min=int(duration) if duration else None,
+        stops=transfers,
+        source=source,
+        link=aviasales_link(dep_date, origin_airport, dest_airport),
+        origin_airport=origin_airport,
+        destination_airport=dest_airport,
+        flight_number=str(row.get("flight_number") or ""),
+        departure_time=dep_time,
+        arrival_time=arr_time,
+        arrival_date=arr_date,
+        raw=row,
+    )
+
+
+def fetch_travelpayouts_offers(
+    departure_dates: list[str],
+    *,
+    direct_only: bool = False,
+) -> list[FlightOffer]:
     if not TRAVELPAYOUTS_ENABLED:
         return []
 
@@ -34,12 +72,12 @@ def fetch_travelpayouts_offers(departure_dates: list[str]) -> list[FlightOffer]:
             "destination": DESTINATION,
             "departure_at": departure_date,
             "one_way": "true",
-            "direct": "false",
+            "direct": "true" if direct_only else "false",
             "sorting": "price",
             "currency": CURRENCY.lower(),
             "market": MARKET,
             "locale": LOCALE.split("-")[0],
-            "limit": 30,
+            "limit": 50,
             "page": 1,
             "token": token,
         }
@@ -65,44 +103,23 @@ def fetch_travelpayouts_offers(departure_dates: list[str]) -> list[FlightOffer]:
                 if r.get("expires_at")
             ]
             expiry_note = f" | expira: {expires_samples[0]}" if expires_samples else ""
+            tag = "direto" if direct_only else "todos"
             logger.info(
-                "Travelpayouts: %d ofertas para %s — mín. R$ %.2f (cache Aviasales ~48h%s)",
+                "Travelpayouts (%s): %d ofertas para %s — mín. R$ %.2f (cache Aviasales ~48h%s)",
+                tag,
                 len(rows),
                 departure_date,
                 row_min,
                 expiry_note,
             )
         else:
-            logger.warning("Travelpayouts: 0 ofertas para %s", departure_date)
+            tag = "direto" if direct_only else "todos"
+            logger.warning("Travelpayouts (%s): 0 ofertas para %s", tag, departure_date)
 
+        source = "travelpayouts_direct" if direct_only else "travelpayouts"
         for row in rows:
-            price = row.get("price")
-            if price is None:
-                continue
-            airline = (row.get("airline") or "N/A").upper()
-            dep = (row.get("departure_at") or departure_date)[:10]
-            transfers = int(row.get("transfers") or 0)
-            duration = row.get("duration_to") or row.get("duration")
-            link = aviasales_link(
-                dep,
-                row.get("origin_airport") or "",
-                row.get("destination_airport") or "",
-            )
-
-            offers.append(
-                FlightOffer(
-                    price_brl=float(price),
-                    airline=airline,
-                    departure_date=dep,
-                    duration_min=int(duration) if duration else None,
-                    stops=transfers,
-                    source="travelpayouts",
-                    link=link,
-                    origin_airport=row.get("origin_airport") or "",
-                    destination_airport=row.get("destination_airport") or "",
-                    flight_number=str(row.get("flight_number") or ""),
-                    raw=row,
-                )
-            )
+            offer = _offer_from_row(row, departure_date, source=source)
+            if offer:
+                offers.append(offer)
 
     return offers

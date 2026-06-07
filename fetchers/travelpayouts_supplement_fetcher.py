@@ -10,6 +10,7 @@ import requests
 from config import CURRENCY, DEPARTURE_DATES, DESTINATION, LOCALE, MARKET, ORIGIN, TRAVELPAYOUTS_ENABLED
 from links import aviasales_link
 from models import FlightOffer
+from times import split_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,12 @@ def _row_to_offer(row: dict, source: str, fallback_date: str = "") -> FlightOffe
     price = row.get("price")
     if price is None:
         return None
-    dep = (row.get("departure_at") or fallback_date)[:10]
+    dep_raw = row.get("departure_at") or fallback_date
+    dep, dep_time, _ = split_datetime(str(dep_raw))
     if not dep:
         return None
+    arr_raw = row.get("arrival_at") or row.get("return_at") or ""
+    arr_date, arr_time, _ = split_datetime(str(arr_raw))
     origin_airport = row.get("origin_airport") or row.get("origin_code") or ""
     dest_airport = row.get("destination_airport") or row.get("destination_code") or ""
     transfers = int(row.get("transfers") or row.get("number_of_changes") or 0)
@@ -45,6 +49,9 @@ def _row_to_offer(row: dict, source: str, fallback_date: str = "") -> FlightOffe
         origin_airport=origin_airport,
         destination_airport=dest_airport,
         flight_number=str(row.get("flight_number") or ""),
+        departure_time=dep_time,
+        arrival_time=arr_time,
+        arrival_date=arr_date,
         raw=row,
     )
 

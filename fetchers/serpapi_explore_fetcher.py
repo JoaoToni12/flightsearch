@@ -10,6 +10,7 @@ import requests
 from config import CURRENCY, DESTINATION, LOCALE, ORIGIN, SERPAPI_ENABLED
 from links import google_flights_link
 from models import FlightOffer
+from times import split_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,8 @@ ROUTE_PAIRS = [
     (ORIGIN, DESTINATION),
     ("GRU", "CDG"),
     ("VCP", "ORY"),
+    ("GRU", "ORY"),
+    ("VCP", "CDG"),
 ]
 
 
@@ -79,6 +82,10 @@ def fetch_serpapi_explore_offers(departure_dates: list[str]) -> list[FlightOffer
                 origin = flight.get("departure_airport", {}).get("id", dep_id)
                 dest = flight.get("arrival_airport", {}).get("id", arr_id)
                 stops = int(flight.get("number_of_stops") or 0)
+                dep_raw = (flight.get("departure_airport") or {}).get("time", "")
+                arr_raw = (flight.get("arrival_airport") or {}).get("time", "")
+                _, dep_time, _ = split_datetime(str(dep_raw))
+                arr_date, arr_time, _ = split_datetime(str(arr_raw))
                 batch.append(
                     FlightOffer(
                         price_brl=float(price),
@@ -90,6 +97,9 @@ def fetch_serpapi_explore_offers(departure_dates: list[str]) -> list[FlightOffer
                         link=google_flights_link(departure_date, origin, dest),
                         origin_airport=origin,
                         destination_airport=dest,
+                        departure_time=dep_time,
+                        arrival_time=arr_time,
+                        arrival_date=arr_date,
                         raw=flight,
                     )
                 )
