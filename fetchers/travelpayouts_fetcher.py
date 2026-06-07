@@ -43,6 +43,7 @@ def fetch_travelpayouts_offers(departure_dates: list[str]) -> list[FlightOffer]:
             "page": 1,
             "token": token,
         }
+        headers["Cache-Control"] = "no-cache"
         try:
             resp = requests.get(API_BASE, params=params, headers=headers, timeout=45)
             resp.raise_for_status()
@@ -58,11 +59,18 @@ def fetch_travelpayouts_offers(departure_dates: list[str]) -> list[FlightOffer]:
         rows = body.get("data") or []
         if rows:
             row_min = min(float(r["price"]) for r in rows if r.get("price") is not None)
+            expires_samples = [
+                (r.get("expires_at") or "")[:19]
+                for r in rows[:3]
+                if r.get("expires_at")
+            ]
+            expiry_note = f" | expira: {expires_samples[0]}" if expires_samples else ""
             logger.info(
-                "Travelpayouts: %d ofertas para %s — mín. R$ %.2f (cache API até 48h)",
+                "Travelpayouts: %d ofertas para %s — mín. R$ %.2f (cache Aviasales ~48h%s)",
                 len(rows),
                 departure_date,
                 row_min,
+                expiry_note,
             )
         else:
             logger.warning("Travelpayouts: 0 ofertas para %s", departure_date)

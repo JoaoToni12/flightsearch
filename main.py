@@ -29,7 +29,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
-def _serpapi_dates_for_run(state: dict) -> list[str]:
+def _live_source_dates_for_run(state: dict) -> list[str]:
     if not DEPARTURE_DATES:
         return []
     run_counter = int(state.get("run_counter") or 0) + 1
@@ -46,7 +46,7 @@ def _serpapi_dates_for_run(state: dict) -> list[str]:
     cursor = int(state.get("serpapi_date_cursor") or 0) % len(DEPARTURE_DATES)
     chosen = [DEPARTURE_DATES[cursor]]
     state["serpapi_date_cursor"] = (cursor + 1) % len(DEPARTURE_DATES)
-    logger.info("SerpApi agendado para %s (run #%d)", chosen[0], run_counter)
+    logger.info("Fontes tempo real (SerpApi + Amadeus) para %s (run #%d)", chosen[0], run_counter)
     return chosen
 
 
@@ -60,8 +60,8 @@ def _last_notified(state: dict, key: str, legacy_key: str | None = None) -> floa
 def run() -> int:
     state = load_state()
 
-    serpapi_dates = _serpapi_dates_for_run(state)
-    offers = fetch_all_offers(DEPARTURE_DATES, serpapi_dates=serpapi_dates)
+    live_dates = _live_source_dates_for_run(state)
+    offers = fetch_all_offers(DEPARTURE_DATES, live_dates=live_dates)
 
     by_source: dict[str, int] = {}
     for offer in offers:
@@ -74,7 +74,7 @@ def run() -> int:
 
     if not offers:
         logger.error(
-            "Nenhuma oferta encontrada. Verifique TRAVELPAYOUTS_TOKEN e/ou SERPAPI_KEY."
+            "Nenhuma oferta encontrada. Verifique TRAVELPAYOUTS_TOKEN, SERPAPI_KEY e/ou Amadeus."
         )
         save_state(state)
         return 1

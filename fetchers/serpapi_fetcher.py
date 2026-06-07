@@ -96,6 +96,7 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
                     "currency": CURRENCY,
                     "hl": hl,
                     "deep_search": deep,
+                    "no_cache": "true",
                 }
                 try:
                     resp = requests.get(API_URL, params=params, timeout=120)

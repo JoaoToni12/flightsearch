@@ -2,7 +2,7 @@ name: Flight Tracker SAO→PAR
 
 on:
   schedule:
-    # A cada 1h — Travelpayouts sempre; SerpApi a cada 3 runs (~240 buscas/mês)
+    # A cada 1h — campanha ~7 dias; SerpApi+Amadeus 1 data/run (~168 buscas/semana)
     - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
@@ -42,7 +42,10 @@ jobs:
           TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           SERPAPI_ENABLED: ${{ vars.SERPAPI_ENABLED || 'true' }}
-          SERPAPI_EVERY_N_RUNS: ${{ vars.SERPAPI_EVERY_N_RUNS || '3' }}
+          SERPAPI_EVERY_N_RUNS: ${{ vars.SERPAPI_EVERY_N_RUNS || '1' }}
+          AMADEUS_ENABLED: ${{ vars.AMADEUS_ENABLED || 'true' }}
+          AMADEUS_CLIENT_ID: ${{ secrets.AMADEUS_CLIENT_ID }}
+          AMADEUS_CLIENT_SECRET: ${{ secrets.AMADEUS_CLIENT_SECRET }}
           TRAVELPAYOUTS_ENABLED: ${{ vars.TRAVELPAYOUTS_ENABLED || 'true' }}
 
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
