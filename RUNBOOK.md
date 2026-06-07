@@ -8,7 +8,7 @@ Monitor de passagens **só ida** (23–27/07/2026) com **até 3 fontes**, alerta
 |------------|---------|-------|
 | Fonte 1 | [Travelpayouts](https://www.travelpayouts.com/) Aviasales Data API | Grátis |
 | Fonte 2 | [SerpApi](https://serpapi.com/) Google Flights | 250 buscas/mês grátis |
-| Fonte 3 | [Amadeus](https://developers.amadeus.com/) Flight Offers (opcional) | Grátis (test) |
+| Fonte 3 | Travelpayouts range + grouped + SerpApi Explore | Grátis (mesmos tokens) |
 | E-mail | [Resend](https://resend.com/) ou SMTP (Gmail/Brevo) | Grátis |
 | Host | GitHub Actions (repo público) | Grátis |
 | Estado | Repository Variable `FLIGHT_TRACKER_STATE` | Grátis |
@@ -17,23 +17,15 @@ Monitor de passagens **só ida** (23–27/07/2026) com **até 3 fontes**, alerta
 
 | Fonte | Frequência | Cache | Setup |
 |-------|------------|-------|-------|
-| **Travelpayouts** | 5 datas/run | ~48h (Aviasales) — **não dá para resetar** no free tier | `TRAVELPAYOUTS_TOKEN` ✓ |
-| **SerpApi** (Google Flights) | 1 data/run, `no_cache=true` | fresco a cada hora | `SERPAPI_KEY` ✓ |
-| **Amadeus GDS** (opcional) | mesma data do SerpApi | tempo real | 2 secrets (5 min) |
+| **Travelpayouts dates** | 5 datas/run | ~48h (Aviasales) — **não dá para resetar** no free tier | `TRAVELPAYOUTS_TOKEN` ✓ |
+| **Travelpayouts range** | faixa 55–115% da ref. | cache ~48h, slice diferente | mesmo token ✓ |
+| **Travelpayouts grouped** | 1 call/mês julho | mínimo por data agrupado | mesmo token ✓ |
+| **SerpApi Google Flights** | 1 data/run, `no_cache` | fresco a cada hora | `SERPAPI_KEY` ✓ |
+| **SerpApi Travel Explore** | mesma data, a cada 4 runs | ângulo alternativo Google | mesmo `SERPAPI_KEY` ✓ |
 
 ### Travelpayouts e cache
 
-A Data API **sempre** serve cache de buscas Aviasales (até 48h). Não existe bypass gratuito — a API de busca em tempo real exige projeto aprovado (50k MAU). Repetir o mesmo preço entre runs é esperado; SerpApi e Amadeus compensam.
-
-### Ativar Amadeus (terceira fonte, ~5 min)
-
-1. https://developers.amadeus.com/ → conta grátis → **Create app**
-2. Copie **API Key** e **API Secret**
-3. GitHub Secrets:
-   - `AMADEUS_CLIENT_ID`
-   - `AMADEUS_CLIENT_SECRET`
-
-Sem esses secrets o tracker segue com Travelpayouts + SerpApi.
+A Data API **sempre** serve cache Aviasales (até 48h). Não há reset gratuito. Compensamos com **3 endpoints Travelpayouts** + **2 engines SerpApi** — zero cadastro novo.
 
 ## Preço de referência e alvos (dinâmico)
 

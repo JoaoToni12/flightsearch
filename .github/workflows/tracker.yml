@@ -43,9 +43,8 @@ jobs:
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           SERPAPI_ENABLED: ${{ vars.SERPAPI_ENABLED || 'true' }}
           SERPAPI_EVERY_N_RUNS: ${{ vars.SERPAPI_EVERY_N_RUNS || '1' }}
-          AMADEUS_ENABLED: ${{ vars.AMADEUS_ENABLED || 'true' }}
-          AMADEUS_CLIENT_ID: ${{ secrets.AMADEUS_CLIENT_ID }}
-          AMADEUS_CLIENT_SECRET: ${{ secrets.AMADEUS_CLIENT_SECRET }}
+          HUNT_PRICE_MIN_PCT: ${{ vars.HUNT_PRICE_MIN_PCT || '55' }}
+          HUNT_PRICE_MAX_PCT: ${{ vars.HUNT_PRICE_MAX_PCT || '115' }}
           TRAVELPAYOUTS_ENABLED: ${{ vars.TRAVELPAYOUTS_ENABLED || 'true' }}
 
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

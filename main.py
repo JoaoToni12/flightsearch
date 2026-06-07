@@ -15,6 +15,9 @@ from calibration import (
 from config import (
     DEPARTURE_DATES,
     GREEN_MIN_BREAK_BRL,
+    HUNT_PRICE_MAX_PCT,
+    HUNT_PRICE_MIN_PCT,
+    MARKET_REFERENCE_SEED_BRL,
     SERPAPI_EVERY_N_RUNS,
     TARGET_DISCOUNT_PCT,
     YELLOW_BAND_ABOVE_GREEN_PCT,
@@ -46,8 +49,16 @@ def _live_source_dates_for_run(state: dict) -> list[str]:
     cursor = int(state.get("serpapi_date_cursor") or 0) % len(DEPARTURE_DATES)
     chosen = [DEPARTURE_DATES[cursor]]
     state["serpapi_date_cursor"] = (cursor + 1) % len(DEPARTURE_DATES)
-    logger.info("Fontes tempo real (SerpApi + Amadeus) para %s (run #%d)", chosen[0], run_counter)
+    logger.info("SerpApi Google Flights para %s (run #%d)", chosen[0], run_counter)
     return chosen
+
+
+def _hunt_price_band(state: dict) -> tuple[float, float]:
+    ref = float(state.get("reference_price_brl") or MARKET_REFERENCE_SEED_BRL)
+    return (
+        round(ref * HUNT_PRICE_MIN_PCT / 100, 2),
+        round(ref * HUNT_PRICE_MAX_PCT / 100, 2),
+    )
 
 
 def _last_notified(state: dict, key: str, legacy_key: str | None = None) -> float | None:
@@ -61,20 +72,38 @@ def run() -> int:
     state = load_state()
 
     live_dates = _live_source_dates_for_run(state)
-    offers = fetch_all_offers(DEPARTURE_DATES, live_dates=live_dates)
+    run_counter = int(state.get("run_counter") or 0)
+    hunt_min, hunt_max = _hunt_price_band(state)
+    offers = fetch_all_offers(
+        DEPARTURE_DATES,
+        live_dates=live_dates,
+        run_counter=run_counter,
+        hunt_price_min=hunt_min,
+        hunt_price_max=hunt_max,
+    )
 
     by_source: dict[str, int] = {}
+    source_mins_log: dict[str, float] = {}
     for offer in offers:
         by_source[offer.source] = by_source.get(offer.source, 0) + 1
+        cur = source_mins_log.get(offer.source)
+        if cur is None or offer.price_brl < cur:
+            source_mins_log[offer.source] = offer.price_brl
+    mins_txt = ", ".join(
+        f"{src}=R$ {price:,.2f}" for src, price in sorted(source_mins_log.items())
+    )
     logger.info(
-        "Fetch concluído: %d ofertas (%s)",
+        "Fetch: %d ofertas (%s) | mínimos: %s | caça R$ %.0f–%.0f",
         len(offers),
         ", ".join(f"{src}={n}" for src, n in sorted(by_source.items())) or "nenhuma",
+        mins_txt or "—",
+        hunt_min,
+        hunt_max,
     )
 
     if not offers:
         logger.error(
-            "Nenhuma oferta encontrada. Verifique TRAVELPAYOUTS_TOKEN, SERPAPI_KEY e/ou Amadeus."
+            "Nenhuma oferta encontrada. Verifique TRAVELPAYOUTS_TOKEN e SERPAPI_KEY."
         )
         save_state(state)
         return 1

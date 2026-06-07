@@ -48,7 +48,9 @@ TRAVELPAYOUTS_ENABLED = os.getenv("TRAVELPAYOUTS_ENABLED", "true").lower() == "t
 # SerpApi/Amadeus: 1 data por run. Campanha 7d × 24h ≈ 168 buscas (cabe no free tier 250/mês).
 SERPAPI_EVERY_N_RUNS = max(1, int(os.getenv("SERPAPI_EVERY_N_RUNS", "1")))
 
-AMADEUS_ENABLED = os.getenv("AMADEUS_ENABLED", "true").lower() == "true"
+# Faixa da busca Travelpayouts range (% da referência do estado anterior).
+HUNT_PRICE_MIN_PCT = float(os.getenv("HUNT_PRICE_MIN_PCT", "55"))
+HUNT_PRICE_MAX_PCT = float(os.getenv("HUNT_PRICE_MAX_PCT", "115"))
 
 STATE_VARIABLE_NAME = os.getenv("STATE_VARIABLE_NAME", "FLIGHT_TRACKER_STATE")
 
