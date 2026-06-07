@@ -2,8 +2,8 @@ name: Flight Tracker SAO→PAR
 
 on:
   schedule:
-    # A cada 2h — equilibra free tier SerpApi (1 data/run) + Travelpayouts ilimitado
-    - cron: "0 */2 * * *"
+    # A cada 1h — Travelpayouts sempre; SerpApi a cada 3 runs (~240 buscas/mês)
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       test_email:
@@ -42,6 +42,7 @@ jobs:
           TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           SERPAPI_ENABLED: ${{ vars.SERPAPI_ENABLED || 'true' }}
+          SERPAPI_EVERY_N_RUNS: ${{ vars.SERPAPI_EVERY_N_RUNS || '3' }}
           TRAVELPAYOUTS_ENABLED: ${{ vars.TRAVELPAYOUTS_ENABLED || 'true' }}
 
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

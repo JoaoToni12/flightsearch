@@ -45,6 +45,9 @@ REFERENCE_RECALIBRATE_DAYS = int(os.getenv("REFERENCE_RECALIBRATE_DAYS", "7"))
 SERPAPI_ENABLED = os.getenv("SERPAPI_ENABLED", "true").lower() == "true"
 TRAVELPAYOUTS_ENABLED = os.getenv("TRAVELPAYOUTS_ENABLED", "true").lower() == "true"
 
+# SerpApi free tier = 250/mês. Com cron horário, consultar a cada N runs (~3h → ~240/mês).
+SERPAPI_EVERY_N_RUNS = max(1, int(os.getenv("SERPAPI_EVERY_N_RUNS", "3")))
+
 STATE_VARIABLE_NAME = os.getenv("STATE_VARIABLE_NAME", "FLIGHT_TRACKER_STATE")
 
 PREFERRED_AIRLINES = {

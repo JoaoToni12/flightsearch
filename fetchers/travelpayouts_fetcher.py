@@ -55,7 +55,19 @@ def fetch_travelpayouts_offers(departure_dates: list[str]) -> list[FlightOffer]:
             logger.warning("Travelpayouts sem sucesso para %s: %s", departure_date, body.get("error"))
             continue
 
-        for row in body.get("data") or []:
+        rows = body.get("data") or []
+        if rows:
+            row_min = min(float(r["price"]) for r in rows if r.get("price") is not None)
+            logger.info(
+                "Travelpayouts: %d ofertas para %s — mín. R$ %.2f (cache API até 48h)",
+                len(rows),
+                departure_date,
+                row_min,
+            )
+        else:
+            logger.warning("Travelpayouts: 0 ofertas para %s", departure_date)
+
+        for row in rows:
             price = row.get("price")
             if price is None:
                 continue

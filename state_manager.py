@@ -26,6 +26,7 @@ def default_state() -> dict[str, Any]:
         "yellow_target_price_brl": None,
         "last_cheapest": None,
         "serpapi_date_cursor": 0,
+        "run_counter": 0,
         "reference_updated_at": _utc_now_iso(),
         "updated_at": _utc_now_iso(),
     }

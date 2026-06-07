@@ -12,10 +12,10 @@ Monitor de passagens **só ida** (23–27/07/2026) com **duas fontes gratuitas**
 | Host | GitHub Actions (repo público) | Grátis |
 | Estado | Repository Variable `FLIGHT_TRACKER_STATE` | Grátis |
 
-**Cron:** a cada 2 horas (`0 */2 * * *` UTC).
+**Cron:** a cada 1 hora (`0 * * * *` UTC).
 
-- Travelpayouts consulta **todas as 5 datas** a cada run.
-- SerpApi consulta **1 data por run** (round-robin) → ~180 buscas/mês, dentro do free tier.
+- Travelpayouts consulta **todas as 5 datas** a cada run (HTTP fresco; a API Aviasales cacheia preços até **48h** — mesmo valor em runs seguidas é normal).
+- SerpApi consulta **1 data** a cada **3 runs** (~3h) → ~240 buscas/mês, dentro do free tier.
 
 ## Preço de referência e alvos (dinâmico)
 

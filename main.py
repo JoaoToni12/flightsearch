@@ -15,6 +15,7 @@ from calibration import (
 from config import (
     DEPARTURE_DATES,
     GREEN_MIN_BREAK_BRL,
+    SERPAPI_EVERY_N_RUNS,
     TARGET_DISCOUNT_PCT,
     YELLOW_BAND_ABOVE_GREEN_PCT,
     YELLOW_MIN_BREAK_BRL,
@@ -31,9 +32,21 @@ logger = logging.getLogger(__name__)
 def _serpapi_dates_for_run(state: dict) -> list[str]:
     if not DEPARTURE_DATES:
         return []
+    run_counter = int(state.get("run_counter") or 0) + 1
+    state["run_counter"] = run_counter
+
+    if run_counter % SERPAPI_EVERY_N_RUNS != 0:
+        logger.info(
+            "SerpApi pulado neste run (#%d — consulta a cada %d runs)",
+            run_counter,
+            SERPAPI_EVERY_N_RUNS,
+        )
+        return []
+
     cursor = int(state.get("serpapi_date_cursor") or 0) % len(DEPARTURE_DATES)
     chosen = [DEPARTURE_DATES[cursor]]
     state["serpapi_date_cursor"] = (cursor + 1) % len(DEPARTURE_DATES)
+    logger.info("SerpApi agendado para %s (run #%d)", chosen[0], run_counter)
     return chosen
 
 
@@ -49,6 +62,15 @@ def run() -> int:
 
     serpapi_dates = _serpapi_dates_for_run(state)
     offers = fetch_all_offers(DEPARTURE_DATES, serpapi_dates=serpapi_dates)
+
+    by_source: dict[str, int] = {}
+    for offer in offers:
+        by_source[offer.source] = by_source.get(offer.source, 0) + 1
+    logger.info(
+        "Fetch concluído: %d ofertas (%s)",
+        len(offers),
+        ", ".join(f"{src}={n}" for src, n in sorted(by_source.items())) or "nenhuma",
+    )
 
     if not offers:
         logger.error(
