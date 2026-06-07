@@ -7,7 +7,7 @@ import os
 
 import requests
 
-from config import CURRENCY, DESTINATION, LOCALE, ORIGIN, SERPAPI_ENABLED
+from config import CURRENCY, DESTINATION, LOCALE, MARKET, ORIGIN, SERPAPI_ENABLED
 from links import google_flights_link
 from models import FlightOffer
 from times import split_datetime
