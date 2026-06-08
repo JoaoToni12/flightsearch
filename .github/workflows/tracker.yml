@@ -2,8 +2,11 @@ name: Flight Tracker SAO→PAR
 
 on:
   schedule:
-    # A cada 1h — campanha ~7 dias; SerpApi+Amadeus 1 data/run (~168 buscas/semana)
-    - cron: "0 * * * *"
+    # A cada 15min (4 tentativas/hora) — GitHub descarta runs agendados com frequência;
+    # múltiplas tentativas garantem ≥1 run/hora. SERPAPI_EVERY_N_RUNS=6 mantém
+    # SerpApi ~1×/hora dado o ~40% de entrega real observado.
+    # Trigger externo confiável: cron-job.org POST /dispatches a cada 1h (ver RUNBOOK.md).
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       test_email:
@@ -42,7 +45,7 @@ jobs:
           TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           SERPAPI_ENABLED: ${{ vars.SERPAPI_ENABLED || 'true' }}
-          SERPAPI_EVERY_N_RUNS: ${{ vars.SERPAPI_EVERY_N_RUNS || '2' }}
+          SERPAPI_EVERY_N_RUNS: ${{ vars.SERPAPI_EVERY_N_RUNS || '6' }}
           SERPAPI_ROUTES_PER_DATE: ${{ vars.SERPAPI_ROUTES_PER_DATE || '2' }}
           SERPAPI_EXPLORE_ENABLED: ${{ vars.SERPAPI_EXPLORE_ENABLED || 'false' }}
           ORIGIN_AIRPORTS: ${{ vars.ORIGIN_AIRPORTS || 'VCP,GRU,CGH' }}

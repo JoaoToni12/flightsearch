@@ -13,7 +13,8 @@ Monitor de passagens **só ida** (23–27/07/2026) com **até 3 fontes**, alerta
 | Host | GitHub Actions (repo público) | Grátis |
 | Estado | Repository Variable `FLIGHT_TRACKER_STATE` | Grátis |
 
-**Cron:** a cada 1 hora (`0 * * * *` UTC). Campanha típica: **7 dias** (~168 runs).
+**Cron nativo:** a cada 15 min (`*/15 * * * *` UTC) — 4 tentativas/hora; GitHub descarta ~60% delas mas é improvável descartar todas as 4.
+**Trigger externo (recomendado):** cron-job.org dispara `workflow_dispatch` toda hora no :05 — bypassa o scheduler do GitHub por completo. Ver seção 6b.
 
 | Fonte | Frequência | Cache | Setup |
 |-------|------------|-------|-------|
@@ -111,6 +112,38 @@ Settings → Secrets and variables → Actions → **Variables**:
 | `TARGET_DISCOUNT_PCT` | `35` (30–40 conforme preferência) |
 | `MARKET_REFERENCE_SEED_BRL` | `4200` |
 | `FLIGHT_TRACKER_STATE` | *(deixe vazio na 1ª vez)* |
+
+## 6b. Trigger externo garantido — cron-job.org (recomendado)
+
+O scheduler do GitHub pode atrasar ou pular runs agendados por horas. A solução: um serviço externo que chama a API do GitHub para disparar o workflow.
+
+**Setup (2 min, grátis):**
+
+1. Acesse https://console.cron-job.org → crie conta gratuita
+2. **New cronjob** com estes parâmetros:
+
+| Campo | Valor |
+|-------|-------|
+| URL | `https://api.github.com/repos/JoaoToni12/flightsearch/actions/workflows/tracker.yml/dispatches` |
+| Método | `POST` |
+| Schedule | Every hour, minute `5` (`:05` — não colide com o cron nativo das :00) |
+
+3. Em **Headers**, adicione:
+   ```
+   Authorization: Bearer <SEU_GH_PAT>
+   Accept: application/vnd.github+json
+   Content-Type: application/json
+   X-GitHub-Api-Version: 2022-11-28
+   ```
+4. Em **Request body**:
+   ```json
+   {"ref": "main"}
+   ```
+5. Salve. A resposta esperada é HTTP 204 (sem corpo).
+
+> Use um **Fine-grained PAT** separado com apenas `Actions: Write` — não reutilize o GH_PAT principal que tem permissão de escrita em Variables.
+
+**Resultado:** a cada hora às :05 o cron-job.org dispara o workflow independentemente do GitHub. O cron nativo (`*/15`) continua como segundo nível de backup.
 
 ## 6. PAT para gravar estado (anti-spam)
 
