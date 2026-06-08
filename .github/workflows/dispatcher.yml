@@ -1,0 +1,35 @@
+name: Tracker Dispatcher
+
+# Corrente auto-sustentada: quando o tracker termina, este workflow dorme
+# 58 minutos e dispara o próximo run — garantindo polling ~de hora em hora
+# sem depender do scheduler do GitHub (que pula runs com frequência).
+#
+# cancel-in-progress: true garante que só um dispatcher dorme de cada vez.
+# Se o cron backup do tracker disparar enquanto o dispatcher dorme,
+# o dispatcher antigo é cancelado e um novo começa do zero.
+
+on:
+  workflow_run:
+    workflows: ["Flight Tracker SAO→PAR"]
+    types: [completed]
+
+concurrency:
+  group: flight-tracker-dispatcher
+  cancel-in-progress: true
+
+jobs:
+  schedule-next:
+    runs-on: ubuntu-latest
+    timeout-minutes: 62
+    steps:
+      - name: Aguarda 58 minutos e dispara próxima run
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          sleep 3480
+          curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer $GH_PAT" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/tracker.yml/dispatches" \
+            -d '{"ref":"main"}'
