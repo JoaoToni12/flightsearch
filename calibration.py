@@ -124,6 +124,44 @@ def _hours_since(iso_timestamp: str | None) -> float | None:
         return None
 
 
+def update_scan_history(
+    state: dict,
+    scan_min: float,
+    *,
+    max_entries: int,
+) -> float | None:
+    """Append scan_min to rolling history, update best_ever, return previous best_ever."""
+    history: list = list(state.get("scan_min_history") or [])
+    prev_best = state.get("best_ever_scan_min")
+    prev_best_float = float(prev_best) if prev_best is not None else None
+
+    history.append(round(scan_min, 2))
+    if len(history) > max_entries:
+        history = history[-max_entries:]
+    state["scan_min_history"] = history
+    state["best_ever_scan_min"] = round(min(history), 2)
+    return prev_best_float
+
+
+def should_notify_new_minimum(
+    scan_min: float,
+    prev_best: float | None,
+    *,
+    min_drop_brl: float,
+) -> tuple[bool, str]:
+    """True se scan_min é novo mínimo histórico (queda ≥ min_drop_brl vs prev_best)."""
+    if prev_best is None:
+        return False, ""
+    if scan_min <= prev_best - min_drop_brl:
+        drop = prev_best - scan_min
+        reason = (
+            f"Novo mínimo histórico: R$ {scan_min:,.2f} "
+            f"(↓ R$ {drop:,.2f} vs anterior R$ {prev_best:,.2f})"
+        )
+        return True, reason
+    return False, ""
+
+
 def should_notify_tier(
     qualifying: list[FlightOffer],
     last_notified: float | None,

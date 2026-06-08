@@ -27,6 +27,8 @@ def default_state() -> dict[str, Any]:
         "last_cheapest": None,
         "serpapi_date_cursor": 0,
         "run_counter": 0,
+        "best_ever_scan_min": None,
+        "scan_min_history": [],
         "reference_updated_at": _utc_now_iso(),
         "updated_at": _utc_now_iso(),
     }

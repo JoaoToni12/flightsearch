@@ -459,9 +459,14 @@ def send_status_email(
     alert_pending_reason: str,
     scan_min: float | None = None,
     reference_basis: str = "",
+    test_mode: bool = True,
 ) -> bool:
-    """E-mail de teste/status com o mesmo layout, nível amarelo."""
-    reason = f"[TESTE] Verificação de entrega — {alert_pending_reason}"
+    """E-mail de pulso/status. Em modo teste, prefixo [TESTE] é adicionado."""
+    reason = (
+        f"[TESTE] Verificação de entrega — {alert_pending_reason}"
+        if test_mode
+        else alert_pending_reason
+    )
     return send_tiered_alert(
         AlertLevel.YELLOW,
         offers,

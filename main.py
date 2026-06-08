@@ -12,8 +12,10 @@ from calibration import (
     compute_thresholds,
     per_date_minimums,
     per_source_mins,
+    should_notify_new_minimum,
     should_notify_tier,
     update_reference,
+    update_scan_history,
 )
 from config import (
     DEPARTURE_DATES,
@@ -21,7 +23,9 @@ from config import (
     HUNT_PRICE_MAX_PCT,
     HUNT_PRICE_MIN_PCT,
     MARKET_REFERENCE_SEED_BRL,
+    NEW_MIN_BREAK_BRL,
     SCAN_DIGEST_HOURS,
+    SCAN_HISTORY_MAX,
     SERPAPI_EVERY_N_RUNS,
     SERPAPI_LIVE_DATES,
     SERPAPI_ROUTES_PER_DATE,
@@ -129,9 +133,19 @@ def run() -> int:
         return 1
 
     scan_min = min(o.price_brl for o in offers)
+
+    # Seed best_ever from previous run's persisted scan_min_brl (antes de update_reference sobrescrever)
+    if state.get("best_ever_scan_min") is None and state.get("scan_min_brl") is not None:
+        state["best_ever_scan_min"] = float(state["scan_min_brl"])
+
     source_mins = per_source_mins(offers)
     reference, ref_basis = update_reference(
         state, offers=offers, scan_min=scan_min, source_mins=source_mins
+    )
+
+    prev_best_scan = update_scan_history(state, scan_min, max_entries=SCAN_HISTORY_MAX)
+    new_min_send, new_min_reason = should_notify_new_minimum(
+        scan_min, prev_best_scan, min_drop_brl=NEW_MIN_BREAK_BRL
     )
 
     green_target, yellow_target = compute_thresholds(reference)
@@ -221,6 +235,24 @@ def run() -> int:
                 datetime.now(timezone.utc).replace(microsecond=0).isoformat()
             )
         logger.info("Alerta AMARELO disparado (%d opções).", len(picks))
+    elif new_min_send:
+        picks = top_offers(offers, max_price=round(scan_min * 1.10, 2))
+        sent = send_tiered_alert(
+            AlertLevel.YELLOW,
+            picks,
+            reason=new_min_reason,
+            reference_price=reference,
+            green_target=green_target,
+            yellow_target=yellow_target,
+            scan_min=scan_min,
+            reference_basis=ref_basis,
+        )
+        if sent and picks:
+            state["last_yellow_notified_price_brl"] = scan_min
+            state["last_yellow_notified_at"] = (
+                datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+            )
+        logger.info("Alerta NOVO MÍNIMO disparado (R$ %.2f).", scan_min)
     else:
         pending = (
             f"Verde: {len(green_pool)} op. | Amarelo: {len(yellow_pool)} op. "
@@ -248,6 +280,7 @@ def run() -> int:
                 alert_pending_reason=reason,
                 scan_min=scan_min,
                 reference_basis=ref_basis,
+                test_mode=test_mode,
             ):
                 if digest_due and not test_mode:
                     state["last_scan_digest_at"] = (

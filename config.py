@@ -62,6 +62,11 @@ SERPAPI_EXPLORE_ENABLED = os.getenv("SERPAPI_EXPLORE_ENABLED", "false").lower() 
 # E-mail de pulso: prova que o scan rodou (mesmo sem alerta de preço).
 SCAN_DIGEST_HOURS = float(os.getenv("SCAN_DIGEST_HOURS", "24"))
 
+# Alerta "novo mínimo": dispara se scan_min cair ≥ N BRL vs melhor histórico.
+NEW_MIN_BREAK_BRL = float(os.getenv("NEW_MIN_BREAK_BRL", "50"))
+# Janela do histórico de scan_min (número de runs para calcular best_ever).
+SCAN_HISTORY_MAX = int(os.getenv("SCAN_HISTORY_MAX", "48"))
+
 # Faixa da busca Travelpayouts range (% da referência do estado anterior).
 HUNT_PRICE_MIN_PCT = float(os.getenv("HUNT_PRICE_MIN_PCT", "45"))
 HUNT_PRICE_MAX_PCT = float(os.getenv("HUNT_PRICE_MAX_PCT", "130"))
