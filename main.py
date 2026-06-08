@@ -239,8 +239,9 @@ def run() -> int:
                     f"[PULSO {SCAN_DIGEST_HOURS:.0f}h] Scan ativo — mín. R$ {scan_min:,.2f} "
                     f"(SerpApi: {SERPAPI_ROUTES_PER_DATE} rotas quando ativo). {pending}"
                 )
+            display_cap = round(scan_min * 1.25, 2)
             if send_status_email(
-                top_offers(offers),
+                top_offers(offers, max_price=display_cap),
                 reference_price=reference,
                 green_target=green_target,
                 yellow_target=yellow_target,

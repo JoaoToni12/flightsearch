@@ -52,6 +52,33 @@ def test_top_offers_prefers_ideal_dates():
     assert picks[0].departure_date in ("2026-07-24", "2026-07-25", "2026-07-26")
 
 
+def test_top_offers_prefers_cheaper_over_direct():
+    expensive_direct = FlightOffer(
+        price_brl=4161,
+        airline="AF",
+        departure_date="2026-07-24",
+        duration_min=600,
+        stops=0,
+        source="travelpayouts_direct",
+        link="https://example.com",
+        origin_airport="GRU",
+        destination_airport="CDG",
+    )
+    cheap_one_stop = FlightOffer(
+        price_brl=2370,
+        airline="AD",
+        departure_date="2026-07-24",
+        duration_min=730,
+        stops=1,
+        source="travelpayouts_vcp",
+        link="https://example.com",
+        origin_airport="VCP",
+        destination_airport="BVA",
+    )
+    picks = top_offers([expensive_direct, cheap_one_stop], limit=1)
+    assert picks[0].price_brl == 2370
+
+
 def test_top_offers_prefers_fewer_stops_at_same_price():
     direct = FlightOffer(
         price_brl=2400,
@@ -89,3 +116,10 @@ def test_yellow_pool_excludes_market_prices_above_narrow_band():
     yellow = filter_yellow_only(offers, yellow_max, green_max)
     assert len(yellow) == 1
     assert yellow[0].price_brl == 1900
+
+
+def test_top_offers_max_price_excludes_outliers():
+    offers = [_offer(2370, "2026-07-24"), _offer(4161, "2026-07-24", "AF")]
+    picks = top_offers(offers, max_price=3000)
+    assert len(picks) == 1
+    assert picks[0].price_brl == 2370

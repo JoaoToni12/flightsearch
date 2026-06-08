@@ -14,10 +14,10 @@ def _stops_penalty(stops: int) -> int:
 
 
 def _sort_key(offer: FlightOffer) -> tuple:
+    """Data ideal → menor preço → menos escalas (direto só desempata)."""
     preferred = set(PREFERRED_DEPARTURE_DATES)
     ideal_date = 0 if offer.departure_date in preferred else 1
-    direct_bonus = 0 if offer.stops == 0 else 1
-    return (ideal_date, direct_bonus, _stops_penalty(offer.stops), offer.price_brl)
+    return (ideal_date, offer.price_brl, _stops_penalty(offer.stops))
 
 
 def dedupe_offers(offers: list[FlightOffer]) -> list[FlightOffer]:
@@ -38,8 +38,16 @@ def dedupe_offers(offers: list[FlightOffer]) -> list[FlightOffer]:
     return unique
 
 
-def top_offers(offers: list[FlightOffer], limit: int = TOP_OFFERS_COUNT) -> list[FlightOffer]:
-    return dedupe_offers(offers)[:limit]
+def top_offers(
+    offers: list[FlightOffer],
+    limit: int = TOP_OFFERS_COUNT,
+    *,
+    max_price: float | None = None,
+) -> list[FlightOffer]:
+    pool = offers
+    if max_price is not None:
+        pool = [o for o in offers if o.price_brl <= max_price]
+    return dedupe_offers(pool)[:limit]
 
 
 def filter_by_max_price(offers: list[FlightOffer], max_price: float) -> list[FlightOffer]:
