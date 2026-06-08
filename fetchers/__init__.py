@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from config import PREFERRED_DEPARTURE_DATES
+from config import PREFERRED_DEPARTURE_DATES, SERPAPI_EXPLORE_ENABLED
 from fetchers.serpapi_explore_fetcher import fetch_serpapi_explore_offers
 from fetchers.serpapi_fetcher import fetch_serpapi_offers
 from fetchers.travelpayouts_fetcher import fetch_travelpayouts_offers
@@ -48,8 +48,7 @@ def fetch_all_offers(
     # Fonte 2: Google Flights ao vivo (toda hora)
     offers.extend(fetch_serpapi_offers(live_dates))
 
-    # Fonte 3b: Google Travel Explore a cada 2 runs (~2h) — ângulo alternativo
-    if run_counter % 2 == 0:
+    if SERPAPI_EXPLORE_ENABLED and run_counter % 4 == 0:
         offers.extend(fetch_serpapi_explore_offers(live_dates))
 
     return offers

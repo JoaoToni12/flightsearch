@@ -42,7 +42,11 @@ jobs:
           TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           SERPAPI_ENABLED: ${{ vars.SERPAPI_ENABLED || 'true' }}
-          SERPAPI_EVERY_N_RUNS: ${{ vars.SERPAPI_EVERY_N_RUNS || '1' }}
+          SERPAPI_EVERY_N_RUNS: ${{ vars.SERPAPI_EVERY_N_RUNS || '2' }}
+          SERPAPI_ROUTES_PER_DATE: ${{ vars.SERPAPI_ROUTES_PER_DATE || '2' }}
+          SERPAPI_EXPLORE_ENABLED: ${{ vars.SERPAPI_EXPLORE_ENABLED || 'false' }}
+          ORIGIN_AIRPORTS: ${{ vars.ORIGIN_AIRPORTS || 'VCP,GRU,CGH' }}
+          SCAN_DIGEST_HOURS: ${{ vars.SCAN_DIGEST_HOURS || '24' }}
           HUNT_PRICE_MIN_PCT: ${{ vars.HUNT_PRICE_MIN_PCT || '45' }}
           HUNT_PRICE_MAX_PCT: ${{ vars.HUNT_PRICE_MAX_PCT || '130' }}
           TRAVELPAYOUTS_ENABLED: ${{ vars.TRAVELPAYOUTS_ENABLED || 'true' }}

@@ -8,20 +8,23 @@ import sys
 from datetime import datetime, timezone
 
 from calibration import (
+    _hours_since,
     compute_thresholds,
+    per_date_minimums,
     per_source_mins,
     should_notify_tier,
     update_reference,
 )
 from config import (
     DEPARTURE_DATES,
-    PREFERRED_DEPARTURE_DATES,
     GREEN_MIN_BREAK_BRL,
     HUNT_PRICE_MAX_PCT,
     HUNT_PRICE_MIN_PCT,
     MARKET_REFERENCE_SEED_BRL,
+    SCAN_DIGEST_HOURS,
     SERPAPI_EVERY_N_RUNS,
     SERPAPI_LIVE_DATES,
+    SERPAPI_ROUTES_PER_DATE,
     TARGET_DISCOUNT_PCT,
     YELLOW_BAND_ABOVE_GREEN_PCT,
     YELLOW_MIN_BREAK_BRL,
@@ -104,11 +107,16 @@ def run() -> int:
     mins_txt = ", ".join(
         f"{src}=R$ {price:,.2f}" for src, price in sorted(source_mins_log.items())
     )
+    date_mins = per_date_minimums(offers)
+    date_txt = ", ".join(
+        f"{d[5:]}=R${p:,.0f}" for d, p in sorted(date_mins.items())
+    )
     logger.info(
-        "Fetch: %d ofertas (%s) | mínimos: %s | caça R$ %.0f–%.0f",
+        "Fetch: %d ofertas (%s) | mínimos: %s | por data: %s | caça R$ %.0f–%.0f",
         len(offers),
         ", ".join(f"{src}={n}" for src, n in sorted(by_source.items())) or "nenhuma",
         mins_txt or "—",
+        date_txt or "—",
         hunt_min,
         hunt_max,
     )
@@ -219,16 +227,32 @@ def run() -> int:
             f"— sem quebra vs últimos alertas"
         )
         logger.info("Sem alerta (%s).", pending)
-        if os.getenv("TEST_EMAIL", "").lower() == "true":
-            send_status_email(
+        test_mode = os.getenv("TEST_EMAIL", "").lower() == "true"
+        digest_due = False
+        if SCAN_DIGEST_HOURS > 0:
+            digest_elapsed = _hours_since(state.get("last_scan_digest_at"))
+            digest_due = digest_elapsed is None or digest_elapsed >= SCAN_DIGEST_HOURS
+        if test_mode or digest_due:
+            reason = pending if not test_mode else f"[TESTE] {pending}"
+            if digest_due and not test_mode:
+                reason = (
+                    f"[PULSO {SCAN_DIGEST_HOURS:.0f}h] Scan ativo — mín. R$ {scan_min:,.2f} "
+                    f"(SerpApi: {SERPAPI_ROUTES_PER_DATE} rotas quando ativo). {pending}"
+                )
+            if send_status_email(
                 top_offers(offers),
                 reference_price=reference,
                 green_target=green_target,
                 yellow_target=yellow_target,
-                alert_pending_reason=pending,
+                alert_pending_reason=reason,
                 scan_min=scan_min,
                 reference_basis=ref_basis,
-            )
+            ):
+                if digest_due and not test_mode:
+                    state["last_scan_digest_at"] = (
+                        datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+                    )
+                    logger.info("E-mail pulso enviado (digest %.0fh).", SCAN_DIGEST_HOURS)
 
     save_state(state)
     return 0

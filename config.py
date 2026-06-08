@@ -6,6 +6,12 @@ import os
 
 ORIGIN = os.getenv("FLIGHT_ORIGIN", "SAO")
 DESTINATION = os.getenv("FLIGHT_DESTINATION", "PAR")
+
+# Consultar cada aeroporto de SP separadamente (SAO agrega e devolve 1 cache só).
+ORIGIN_AIRPORTS: list[str] = os.getenv(
+    "ORIGIN_AIRPORTS",
+    "VCP,GRU,CGH",
+).split(",")
 CURRENCY = os.getenv("FLIGHT_CURRENCY", "BRL")
 LOCALE = os.getenv("FLIGHT_LOCALE", "pt-BR")
 MARKET = os.getenv("FLIGHT_MARKET", "br")
@@ -48,8 +54,13 @@ REFERENCE_RECALIBRATE_DAYS = int(os.getenv("REFERENCE_RECALIBRATE_DAYS", "7"))
 SERPAPI_ENABLED = os.getenv("SERPAPI_ENABLED", "true").lower() == "true"
 TRAVELPAYOUTS_ENABLED = os.getenv("TRAVELPAYOUTS_ENABLED", "true").lower() == "true"
 
-# SerpApi/Amadeus: 1 data por run. Campanha 7d × 24h ≈ 168 buscas (cabe no free tier 250/mês).
-SERPAPI_EVERY_N_RUNS = max(1, int(os.getenv("SERPAPI_EVERY_N_RUNS", "1")))
+# SerpApi: a cada 2h = ~84 runs × 2 rotas ≈ 168 buscas/mês (free tier 250).
+SERPAPI_EVERY_N_RUNS = max(1, int(os.getenv("SERPAPI_EVERY_N_RUNS", "2")))
+SERPAPI_ROUTES_PER_DATE = max(1, int(os.getenv("SERPAPI_ROUTES_PER_DATE", "2")))
+SERPAPI_EXPLORE_ENABLED = os.getenv("SERPAPI_EXPLORE_ENABLED", "false").lower() == "true"
+
+# E-mail de pulso: prova que o scan rodou (mesmo sem alerta de preço).
+SCAN_DIGEST_HOURS = float(os.getenv("SCAN_DIGEST_HOURS", "24"))
 
 # Faixa da busca Travelpayouts range (% da referência do estado anterior).
 HUNT_PRICE_MIN_PCT = float(os.getenv("HUNT_PRICE_MIN_PCT", "45"))

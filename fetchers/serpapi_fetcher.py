@@ -7,7 +7,7 @@ import os
 
 import requests
 
-from config import CURRENCY, DESTINATION, LOCALE, ORIGIN, SERPAPI_ENABLED
+from config import CURRENCY, DESTINATION, LOCALE, ORIGIN, SERPAPI_ENABLED, SERPAPI_ROUTES_PER_DATE
 from links import google_flights_link
 from models import FlightOffer
 from times import split_datetime
@@ -90,7 +90,6 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
 
     hl = LOCALE.split("-")[0] if LOCALE else "pt"
     offers: list[FlightOffer] = []
-    # VCP→BVA/ORY primeiro — Travelpayouts acha o mínimo nessas rotas, não GRU→CDG.
     airport_pairs = [
         ("VCP", "BVA"),
         ("VCP", "ORY"),
@@ -100,10 +99,12 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
         ("CGH", "CDG"),
         (ORIGIN, DESTINATION),
     ]
+    max_routes = min(SERPAPI_ROUTES_PER_DATE, len(airport_pairs))
+
     for departure_date in departure_dates:
-        date_done = False
+        routes_hit = 0
         for dep_id, arr_id in airport_pairs:
-            if date_done:
+            if routes_hit >= max_routes:
                 break
 
             for deep in ("true", "false"):
@@ -158,7 +159,7 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
                         batch_min,
                     )
                     offers.extend(batch)
-                    date_done = True
+                    routes_hit += 1
                     break
 
                 logger.warning(
