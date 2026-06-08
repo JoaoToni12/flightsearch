@@ -8,7 +8,7 @@ def test_live_sources_run_every_hour_by_default():
     dates = main_module._live_source_dates_for_run(state)
     assert len(dates) == 1
     assert state["run_counter"] == 1
-    assert dates[0] in ("2026-07-24", "2026-07-25", "2026-07-23", "2026-07-26", "2026-07-27")
+    assert dates[0] in ("2026-07-24", "2026-07-25")
 
 
 def test_live_sources_skipped_when_throttled(monkeypatch):

@@ -90,18 +90,21 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
 
     hl = LOCALE.split("-")[0] if LOCALE else "pt"
     offers: list[FlightOffer] = []
+    # VCP→BVA/ORY primeiro — Travelpayouts acha o mínimo nessas rotas, não GRU→CDG.
     airport_pairs = [
-        (ORIGIN, DESTINATION),
-        ("GRU", "CDG"),
+        ("VCP", "BVA"),
         ("VCP", "ORY"),
-        ("GRU", "ORY"),
         ("VCP", "CDG"),
+        ("GRU", "CDG"),
+        ("GRU", "ORY"),
         ("CGH", "CDG"),
+        (ORIGIN, DESTINATION),
     ]
-
     for departure_date in departure_dates:
         date_done = False
         for dep_id, arr_id in airport_pairs:
+            if date_done:
+                break
 
             for deep in ("true", "false"):
                 params = {
@@ -144,13 +147,15 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
 
                 batch = _extract_offers(payload, departure_date)
                 if batch:
+                    batch_min = min(o.price_brl for o in batch)
                     logger.info(
-                        "SerpApi: %d ofertas para %s %s→%s (deep_search=%s)",
+                        "SerpApi: %d ofertas para %s %s→%s (deep_search=%s) — mín. R$ %.2f",
                         len(batch),
                         departure_date,
                         dep_id,
                         arr_id,
                         deep,
+                        batch_min,
                     )
                     offers.extend(batch)
                     date_done = True
@@ -163,8 +168,5 @@ def fetch_serpapi_offers(departure_dates: list[str]) -> list[FlightOffer]:
                     arr_id,
                     deep,
                 )
-
-            if date_done:
-                break
 
     return offers

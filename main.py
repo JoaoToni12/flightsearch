@@ -15,12 +15,13 @@ from calibration import (
 )
 from config import (
     DEPARTURE_DATES,
+    PREFERRED_DEPARTURE_DATES,
     GREEN_MIN_BREAK_BRL,
     HUNT_PRICE_MAX_PCT,
     HUNT_PRICE_MIN_PCT,
     MARKET_REFERENCE_SEED_BRL,
-    SERPAPI_DATE_PRIORITY,
     SERPAPI_EVERY_N_RUNS,
+    SERPAPI_LIVE_DATES,
     TARGET_DISCOUNT_PCT,
     YELLOW_BAND_ABOVE_GREEN_PCT,
     YELLOW_MIN_BREAK_BRL,
@@ -49,11 +50,18 @@ def _live_source_dates_for_run(state: dict) -> list[str]:
         )
         return []
 
-    priority = SERPAPI_DATE_PRIORITY or DEPARTURE_DATES
-    cursor = int(state.get("serpapi_date_cursor") or 0) % len(priority)
-    chosen = [priority[cursor]]
-    state["serpapi_date_cursor"] = (cursor + 1) % len(priority)
-    logger.info("SerpApi Google Flights para %s (run #%d)", chosen[0], run_counter)
+    live_dates = SERPAPI_LIVE_DATES or PREFERRED_DEPARTURE_DATES
+    if not live_dates:
+        return []
+    cursor = int(state.get("serpapi_date_cursor") or 0) % len(live_dates)
+    chosen = [live_dates[cursor]]
+    state["serpapi_date_cursor"] = (cursor + 1) % len(live_dates)
+    logger.info(
+        "SerpApi Google Flights para %s (run #%d — rodízio %s)",
+        chosen[0],
+        run_counter,
+        ", ".join(live_dates),
+    )
     return chosen
 
 
@@ -141,6 +149,19 @@ def run() -> int:
 
     best_overall = min(offers, key=lambda o: o.price_brl)
     state["last_cheapest"] = best_overall.to_dict()
+
+    prev = state.get("last_cheapest_fingerprint")
+    fingerprint = (
+        f"{best_overall.source}|{best_overall.departure_date}|"
+        f"{best_overall.origin_airport}→{best_overall.destination_airport}|"
+        f"{best_overall.airline}|{round(best_overall.price_brl, 2)}"
+    )
+    if prev == fingerprint:
+        logger.warning(
+            "Mesmo melhor achado da run anterior (%s) — fonte provavelmente em cache",
+            fingerprint,
+        )
+    state["last_cheapest_fingerprint"] = fingerprint
 
     logger.info(
         "Scan R$ %.2f | Ref R$ %.2f (%s) | Verde < R$ %.2f (-%s%%) | "

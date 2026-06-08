@@ -103,13 +103,21 @@ def fetch_travelpayouts_offers(
                 if r.get("expires_at")
             ]
             expiry_note = f" | expira: {expires_samples[0]}" if expires_samples else ""
+            sample = rows[0]
+            route = (
+                f"{sample.get('origin_airport', '?')}→{sample.get('destination_airport', '?')}"
+            )
+            flight = sample.get("flight_number") or sample.get("airline") or "?"
             tag = "direto" if direct_only else "todos"
             logger.info(
-                "Travelpayouts (%s): %d ofertas para %s — mín. R$ %.2f (cache Aviasales ~48h%s)",
+                "Travelpayouts (%s): %d ofertas para %s — mín. R$ %.2f "
+                "(%s voo %s | cache Aviasales ~48h%s)",
                 tag,
                 len(rows),
                 departure_date,
                 row_min,
+                route,
+                flight,
                 expiry_note,
             )
         else:

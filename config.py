@@ -55,10 +55,8 @@ SERPAPI_EVERY_N_RUNS = max(1, int(os.getenv("SERPAPI_EVERY_N_RUNS", "1")))
 HUNT_PRICE_MIN_PCT = float(os.getenv("HUNT_PRICE_MIN_PCT", "45"))
 HUNT_PRICE_MAX_PCT = float(os.getenv("HUNT_PRICE_MAX_PCT", "130"))
 
-# SerpApi: prioridade 24/25 antes das outras datas no rodízio.
-SERPAPI_DATE_PRIORITY: list[str] = PREFERRED_DEPARTURE_DATES + [
-    d for d in DEPARTURE_DATES if d not in PREFERRED_DEPARTURE_DATES
-]
+# SerpApi ao vivo: só datas ideais (24/25) — 1 por run, alternando (~168 buscas/mês).
+SERPAPI_LIVE_DATES: list[str] = PREFERRED_DEPARTURE_DATES
 
 # Máximo de escalas preferido no ranking dos e-mails (não exclui do pool).
 MAX_STOPS_PREFERENCE = int(os.getenv("MAX_STOPS_PREFERENCE", "2"))
