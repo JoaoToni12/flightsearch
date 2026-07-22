@@ -1,54 +1,55 @@
-"""Agregador de fontes de preço."""
+"""Agregador de fontes — signal-first L0/L1 (+ L2 via orquestrador)."""
 
 from __future__ import annotations
 
-from config import PREFERRED_DEPARTURE_DATES, SERPAPI_EXPLORE_ENABLED
-from fetchers.serpapi_explore_fetcher import fetch_serpapi_explore_offers
-from fetchers.serpapi_fetcher import fetch_serpapi_offers
-from fetchers.travelpayouts_fetcher import fetch_travelpayouts_offers
-from fetchers.travelpayouts_supplement_fetcher import (
+from fetchers.md_rss_fetcher import fetch_md_rss_candidates
+from fetchers.travelpayouts_calendar_fetcher import (
+    fetch_latest_prices,
+    fetch_month_matrix_offers,
+)
+from fetchers.travelpayouts_fetcher import (
     fetch_travelpayouts_grouped,
     fetch_travelpayouts_price_range,
 )
-from models import FlightOffer
+from models import DealCandidate, FlightOffer
 
 
+def fetch_signal_candidates(*, seen_guids: set[str] | None = None) -> list[DealCandidate]:
+    return fetch_md_rss_candidates(seen_guids=seen_guids)
+
+
+def fetch_discovery_offers(
+    *,
+    run_counter: int = 0,
+    hunt_price_min: float | None = None,
+    hunt_price_max: float | None = None,
+) -> list[FlightOffer]:
+    offers: list[FlightOffer] = []
+    offers.extend(fetch_month_matrix_offers(run_counter=run_counter))
+    offers.extend(fetch_latest_prices())
+    offers.extend(fetch_travelpayouts_grouped(run_counter=run_counter))
+    if hunt_price_min is not None and hunt_price_max is not None:
+        offers.extend(
+            fetch_travelpayouts_price_range(
+                value_min=hunt_price_min,
+                value_max=hunt_price_max,
+            )
+        )
+    return offers
+
+
+# Back-compat for older imports/tests.
 def fetch_all_offers(
-    departure_dates: list[str],
+    departure_dates: list[str] | None = None,
     *,
     live_dates: list[str] | None = None,
     run_counter: int = 0,
     hunt_price_min: float | None = None,
     hunt_price_max: float | None = None,
 ) -> list[FlightOffer]:
-    offers: list[FlightOffer] = []
-
-    # Fonte 1: menor preço por data (cache ~48h)
-    offers.extend(fetch_travelpayouts_offers(departure_dates))
-
-    # Fonte 1b: voos diretos nas datas ideais (slice extra, mesmo token)
-    preferred = [d for d in PREFERRED_DEPARTURE_DATES if d in departure_dates]
-    if preferred:
-        offers.extend(fetch_travelpayouts_offers(preferred, direct_only=True))
-
-    # Fonte 3: faixa de preço + grouped (mesmo token, slices diferentes)
-    if hunt_price_min is not None and hunt_price_max is not None:
-        offers.extend(
-            fetch_travelpayouts_price_range(
-                departure_dates,
-                value_min=hunt_price_min,
-                value_max=hunt_price_max,
-            )
-        )
-    offers.extend(fetch_travelpayouts_grouped(departure_dates))
-
-    if not live_dates:
-        return offers
-
-    # Fonte 2: Google Flights ao vivo (toda hora)
-    offers.extend(fetch_serpapi_offers(live_dates))
-
-    if SERPAPI_EXPLORE_ENABLED and run_counter % 4 == 0:
-        offers.extend(fetch_serpapi_explore_offers(live_dates))
-
-    return offers
+    _ = departure_dates, live_dates
+    return fetch_discovery_offers(
+        run_counter=run_counter,
+        hunt_price_min=hunt_price_min,
+        hunt_price_max=hunt_price_max,
+    )

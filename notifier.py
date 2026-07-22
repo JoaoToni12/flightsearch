@@ -15,7 +15,7 @@ from enum import Enum
 
 import requests
 
-from config import PREFERRED_DEPARTURE_DATES, TARGET_DISCOUNT_PCT, YELLOW_BAND_ABOVE_GREEN_PCT
+from config import GOOD_DISCOUNT_PCT, RARE_DISCOUNT_PCT
 from links import resolve_links
 from models import FlightOffer
 from times import format_schedule
@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 class AlertLevel(str, Enum):
-    GREEN = "green"
-    YELLOW = "yellow"
+    GREEN = "green"  # rare
+    YELLOW = "yellow"  # good
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ class AlertTheme:
 THEMES = {
     AlertLevel.GREEN: AlertTheme(
         level=AlertLevel.GREEN,
-        label="Emissão recomendada",
+        label="Oportunidade rara",
         emoji="🟢",
         header_bg="#0f766e",
         header_text="#ecfdf5",
@@ -55,7 +55,7 @@ THEMES = {
     ),
     AlertLevel.YELLOW: AlertTheme(
         level=AlertLevel.YELLOW,
-        label="Oportunidade em observação",
+        label="Boa oportunidade",
         emoji="🟡",
         header_bg="#b45309",
         header_text="#fffbeb",
@@ -108,22 +108,30 @@ def _alert_recipients() -> list[str]:
     return recipients
 
 
-def _ideal_badge(departure_date: str) -> str:
-    if departure_date in PREFERRED_DEPARTURE_DATES:
-        return "★ Data ideal"
-    return ""
+def _score_badge(offer: FlightOffer, theme: AlertTheme) -> str:
+    parts = []
+    if offer.discount_pct is not None:
+        parts.append(f"↓{offer.discount_pct:.0f}%")
+    if offer.price_level:
+        parts.append(offer.price_level)
+    if offer.deal_score:
+        parts.append(f"score {offer.deal_score:.0f}")
+    if not parts:
+        return ""
+    label = " · ".join(parts)
+    return (
+        f'<span style="display:inline-block;margin-left:8px;padding:2px 8px;'
+        f'background:{theme.badge_bg};color:{theme.badge_text};'
+        f'font-size:11px;font-weight:600;border-radius:999px;">{label}</span>'
+    )
 
 
 def _offer_card_html(offer: FlightOffer, rank: int, theme: AlertTheme) -> str:
-    ideal = _ideal_badge(offer.departure_date)
-    ideal_html = (
-        f'<span style="display:inline-block;margin-left:8px;padding:2px 8px;'
-        f'background:{theme.badge_bg};color:{theme.badge_text};'
-        f'font-size:11px;font-weight:600;border-radius:999px;">{ideal}</span>'
-        if ideal
-        else ""
-    )
-    route = f"{offer.origin_airport or 'SAO'} → {offer.destination_airport or 'PAR'}"
+    ideal_html = _score_badge(offer, theme)
+    dest = offer.destination_airport or offer.destination_city or "EU"
+    route = f"{offer.origin_airport or 'SAO'} → {dest}"
+    if offer.return_date:
+        route = f"{offer.origin_airport or 'SAO'} ⇄ {dest}"
     urls = resolve_links(offer)
     gf = urls["google_flights"]
     sky = urls["skyscanner"]
@@ -169,7 +177,9 @@ def _offer_card_html(offer: FlightOffer, rank: int, theme: AlertTheme) -> str:
           <tr>
             <td style="padding:18px 20px;">
               <div style="font-size:18px;font-weight:700;color:#0f172a;margin-bottom:4px;">
-                {_format_date_br(offer.departure_date)}{ideal_html}
+                {_format_date_br(offer.departure_date)}
+                {f" → {_format_date_br(offer.return_date)}" if offer.return_date else ""}
+                {ideal_html}
               </div>
               <div style="font-size:15px;color:#334155;margin-bottom:12px;">
                 {offer.airline}
@@ -186,6 +196,7 @@ def _offer_card_html(offer: FlightOffer, rank: int, theme: AlertTheme) -> str:
               </table>
               <div style="margin-top:14px;font-size:12px;color:#94a3b8;">
                 Fonte: {offer.source}
+                {f" · sinal: {offer.signal_source}" if offer.signal_source else ""}
               </div>
               <div style="margin-top:16px;">
                 {avia_btn}
@@ -221,13 +232,16 @@ def build_tiered_email(
     stamp = datetime.now(timezone.utc).strftime("%d/%m %H:%M UTC")
     uid = uuid.uuid4().hex[:8]
     subject = (
-        f"{theme.emoji} [{stamp}] SAO→PAR só ida · "
-        f"{_format_brl(best.price_brl)} · {_format_date_br(best.departure_date)} · #{uid}"
+        f"{theme.emoji} [{stamp}] SAO⇄EU RT · "
+        f"{_format_brl(best.price_brl)} · {_format_date_br(best.departure_date)}"
+        f"{'→' + _format_date_br(best.return_date) if best.return_date else ''} · #{uid}"
     )
 
     cards_text = []
     for i, offer in enumerate(offers, 1):
-        ideal = " [DATA IDEAL]" if offer.departure_date in PREFERRED_DEPARTURE_DATES else ""
+        dest = offer.destination_airport or offer.destination_city or "EU"
+        ret = f"→{_format_date_br(offer.return_date)}" if offer.return_date else ""
+        disc = f" ↓{offer.discount_pct:.0f}%" if offer.discount_pct is not None else ""
         schedule = format_schedule(
             offer.departure_date,
             offer.departure_time,
@@ -236,8 +250,9 @@ def build_tiered_email(
         )
         schedule_line = f"   Horário: {schedule}\n" if schedule else ""
         cards_text.append(
-            f"{i}. {_format_brl(offer.price_brl)} — {_format_date_br(offer.departure_date)}{ideal}\n"
-            f"   {offer.airline} | {offer.origin_airport or 'SAO'}→{offer.destination_airport or 'PAR'} | "
+            f"{i}. {_format_brl(offer.price_brl)}{disc} — "
+            f"{_format_date_br(offer.departure_date)}{ret}\n"
+            f"   {offer.airline} | {offer.origin_airport or 'SAO'}⇄{dest} | "
             f"{_format_duration(offer.duration_min)} | {offer.stops} esc.\n"
             f"{schedule_line}"
             f"   Google Flights: {resolve_links(offer)['google_flights']}\n"
@@ -249,26 +264,27 @@ def build_tiered_email(
     )
     ref_detail = f" ({reference_basis})" if reference_basis else ""
 
-    text = f"""{theme.emoji} {theme.label.upper()} — São Paulo → França (só ida)
+    text = f"""{theme.emoji} {theme.label.upper()} — São Paulo ⇄ Europa (ida e volta)
 
 {reason}
 
-{scan_line}Referência CAPES: {_format_brl(reference_price)}{ref_detail}
-Alvo verde (compra, -{TARGET_DISCOUNT_PCT:.0f}% da ref.): {_format_brl(green_target)}
-Faixa amarela (observação): {_format_brl(green_target)} a {_format_brl(yellow_target)} (+{YELLOW_BAND_ABOVE_GREEN_PCT:.0f}% sobre verde)
-Datas ideais: 24/07 e 25/07/2026
+{scan_line}Baseline de mercado: {_format_brl(reference_price)}{ref_detail}
+Rare (≤ -{RARE_DISCOUNT_PCT:.0f}% / price_level low): {_format_brl(green_target)}
+Good (≤ -{GOOD_DISCOUNT_PCT:.0f}%): até {_format_brl(yellow_target)}
+Teto absoluto de alerta: ver MAX_ALERT_PRICE_BRL
 
 Top {len(offers)} opções agora:
 {chr(10).join(cards_text)}
 
 ---
-flightsearch · monitor automático
+flightsearch · signal-first deal hunter
 """
 
     cards_html = "".join(_offer_card_html(o, i, theme) for i, o in enumerate(offers, 1))
     ideal_note = (
-        "Priorizamos <strong>24/07</strong> e <strong>25/07</strong>, depois voos "
-        "<strong>diretos</strong> ou com menos escalas."
+        "Priorizamos <strong>desconto vs baseline da rota</strong>, "
+        "sinais Melhores Destinos e confirmação Google Flights "
+        "(<code>price_insights</code>)."
     )
 
     html = f"""<!DOCTYPE html>
@@ -282,7 +298,7 @@ flightsearch · monitor automático
         <tr>
           <td style="background:{theme.header_bg};color:{theme.header_text};padding:28px 32px;border-radius:16px 16px 0 0;">
             <div style="font-size:13px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;opacity:0.9;">
-              flightsearch · SAO → PAR
+              flightsearch · SAO ⇄ EU
             </div>
             <div style="font-size:28px;font-weight:800;margin-top:8px;line-height:1.2;">
               {theme.emoji} {theme.label}
@@ -298,19 +314,19 @@ flightsearch · monitor automático
                 <td style="padding:16px 18px;font-size:13px;color:#475569;">
                   <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
                     <tr>
-                      <td width="50%" style="padding:4px 0;">Referência CAPES<br><strong style="color:#0f172a;font-size:16px;">{_format_brl(reference_price)}</strong></td>
-                      <td width="50%" style="padding:4px 0;">Alvo verde (compra)<br><strong style="color:#065f46;font-size:16px;">{_format_brl(green_target)}</strong></td>
+                      <td width="50%" style="padding:4px 0;">Baseline<br><strong style="color:#0f172a;font-size:16px;">{_format_brl(reference_price)}</strong></td>
+                      <td width="50%" style="padding:4px 0;">Alvo rare (-{RARE_DISCOUNT_PCT:.0f}%)<br><strong style="color:#065f46;font-size:16px;">{_format_brl(green_target)}</strong></td>
                     </tr>
                     <tr>
                       <td colspan="2" style="padding:6px 0 0 0;font-size:12px;color:#64748b;">
                         {f"Scan atual: <strong>{_format_brl(scan_min)}</strong> · " if scan_min is not None else ""}
-                        {reference_basis or "baseline conservador entre fontes"}
+                        {reference_basis or "baseline por rota"}
                       </td>
                     </tr>
                     <tr>
                       <td colspan="2" style="padding:10px 0 0 0;border-top:1px solid #e2e8f0;">
-                        Faixa amarela: <strong style="color:#92400e;">{_format_brl(green_target)} – {_format_brl(yellow_target)}</strong>
-                        <span style="color:#64748b;"> (+{YELLOW_BAND_ABOVE_GREEN_PCT:.0f}% sobre verde)</span>
+                        Faixa good: <strong style="color:#92400e;">até {_format_brl(yellow_target)}</strong>
+                        <span style="color:#64748b;"> (-{GOOD_DISCOUNT_PCT:.0f}% vs baseline)</span>
                       </td>
                     </tr>
                   </table>
@@ -330,8 +346,8 @@ flightsearch · monitor automático
           <td style="background:#ffffff;padding:0 32px 28px;border-radius:0 0 16px 16px;
                      border:1px solid #e2e8f0;border-top:none;">
             <div style="font-size:12px;color:#94a3b8;line-height:1.6;text-align:center;">
-              Alerta automático · reembolso CAPES: prefira tarifa oficial via Google Flights ou cia. aérea.<br>
-              Datas monitoradas: 23 a 27/07/2026 · prioridade 24 e 25/07.
+              Alerta automático · confirme no site da cia. antes de emitir.<br>
+              Watchlist: PAR, MAD, LYS, NCE, MRS, BCN · RT 7–14 dias · horizonte 6 meses.
             </div>
           </td>
         </tr>

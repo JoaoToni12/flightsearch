@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-from config import MAX_STOPS_PREFERENCE, PREFERRED_DEPARTURE_DATES, TOP_OFFERS_COUNT
+from config import MAX_STOPS_PREFERENCE, TOP_OFFERS_COUNT
 from models import FlightOffer
 
 
 def _stops_penalty(stops: int) -> int:
-    """Menor = melhor. Penaliza acima do preferido sem excluir do pool."""
     if stops <= MAX_STOPS_PREFERENCE:
         return stops
     return stops + 10
 
 
 def _sort_key(offer: FlightOffer) -> tuple:
-    """Data ideal → menor preço → menos escalas (direto só desempata)."""
-    preferred = set(PREFERRED_DEPARTURE_DATES)
-    ideal_date = 0 if offer.departure_date in preferred else 1
-    return (ideal_date, offer.price_brl, _stops_penalty(offer.stops))
+    """Maior deal_score → menor preço → menos escalas."""
+    return (-offer.deal_score, offer.price_brl, _stops_penalty(offer.stops))
 
 
 def dedupe_offers(offers: list[FlightOffer]) -> list[FlightOffer]:
@@ -26,10 +23,11 @@ def dedupe_offers(offers: list[FlightOffer]) -> list[FlightOffer]:
     for offer in sorted(offers, key=_sort_key):
         key = (
             offer.departure_date,
+            offer.return_date,
             offer.airline,
             round(offer.price_brl, 2),
             offer.origin_airport,
-            offer.destination_airport,
+            offer.destination_airport or offer.destination_city,
         )
         if key in seen:
             continue
@@ -59,5 +57,4 @@ def filter_yellow_only(
     yellow_max: float,
     green_max: float,
 ) -> list[FlightOffer]:
-    """Ofertas na faixa amarela: entre alvo verde (inclusive) e teto amarelo (exclusive)."""
     return [o for o in offers if o.price_brl < yellow_max and o.price_brl >= green_max]

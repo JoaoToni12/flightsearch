@@ -1,12 +1,9 @@
-name: Flight Tracker SAO→PAR
+name: Flight Tracker SAO⇄EU
 
 on:
   schedule:
-    # A cada 15min (4 tentativas/hora) — GitHub descarta runs agendados com frequência;
-    # múltiplas tentativas garantem ≥1 run/hora. SERPAPI_EVERY_N_RUNS=6 mantém
-    # SerpApi ~1×/hora dado o ~40% de entrega real observado.
-    # Trigger externo confiável: cron-job.org POST /dispatches a cada 1h (ver RUNBOOK.md).
-    - cron: "*/15 * * * *"
+    # Hourly UTC — pair with cron-job.org workflow_dispatch for reliability.
+    - cron: "5 * * * *"
   workflow_dispatch:
     inputs:
       test_email:
@@ -15,8 +12,8 @@ on:
         default: false
 
 concurrency:
-  group: flight-tracker-sao-par
-  cancel-in-progress: false
+  group: flight-tracker-sao-eu
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -24,7 +21,7 @@ permissions:
 jobs:
   track:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -45,14 +42,29 @@ jobs:
           TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           SERPAPI_ENABLED: ${{ vars.SERPAPI_ENABLED || 'true' }}
-          SERPAPI_EVERY_N_RUNS: ${{ vars.SERPAPI_EVERY_N_RUNS || '1' }}
-          SERPAPI_ROUTES_PER_DATE: ${{ vars.SERPAPI_ROUTES_PER_DATE || '3' }}
+          SERPAPI_MONTHLY_BUDGET: ${{ vars.SERPAPI_MONTHLY_BUDGET || '250' }}
+          SERPAPI_DAILY_SOFT_CAP: ${{ vars.SERPAPI_DAILY_SOFT_CAP || '8' }}
+          SERPAPI_DEALS_PER_DAY: ${{ vars.SERPAPI_DEALS_PER_DAY || '2' }}
           SERPAPI_EXPLORE_ENABLED: ${{ vars.SERPAPI_EXPLORE_ENABLED || 'false' }}
-          ORIGIN_AIRPORTS: ${{ vars.ORIGIN_AIRPORTS || 'VCP,GRU,CGH' }}
+          MD_RSS_ENABLED: ${{ vars.MD_RSS_ENABLED || 'true' }}
+
+          TRIP_TYPE: ${{ vars.TRIP_TYPE || 'roundtrip' }}
+          HORIZON_MONTHS: ${{ vars.HORIZON_MONTHS || '6' }}
+          TRIP_LENGTH_MIN: ${{ vars.TRIP_LENGTH_MIN || '7' }}
+          TRIP_LENGTH_MAX: ${{ vars.TRIP_LENGTH_MAX || '14' }}
+          ORIGIN_AIRPORTS: ${{ vars.ORIGIN_AIRPORTS || 'GRU,VCP' }}
+          DESTINATION_CITIES: ${{ vars.DESTINATION_CITIES || 'PAR,MAD,LYS,NCE,MRS,BCN' }}
           SCAN_DIGEST_HOURS: ${{ vars.SCAN_DIGEST_HOURS || '24' }}
-          HUNT_PRICE_MIN_PCT: ${{ vars.HUNT_PRICE_MIN_PCT || '45' }}
-          HUNT_PRICE_MAX_PCT: ${{ vars.HUNT_PRICE_MAX_PCT || '130' }}
+          HUNT_PRICE_MIN_PCT: ${{ vars.HUNT_PRICE_MIN_PCT || '40' }}
+          HUNT_PRICE_MAX_PCT: ${{ vars.HUNT_PRICE_MAX_PCT || '110' }}
           TRAVELPAYOUTS_ENABLED: ${{ vars.TRAVELPAYOUTS_ENABLED || 'true' }}
+
+          RARE_DISCOUNT_PCT: ${{ vars.RARE_DISCOUNT_PCT || '40' }}
+          GOOD_DISCOUNT_PCT: ${{ vars.GOOD_DISCOUNT_PCT || '25' }}
+          MAX_ALERT_PRICE_BRL: ${{ vars.MAX_ALERT_PRICE_BRL || '3500' }}
+          MARKET_REFERENCE_SEED_BRL: ${{ vars.MARKET_REFERENCE_SEED_BRL || '4500' }}
+          RARE_MIN_BREAK_BRL: ${{ vars.RARE_MIN_BREAK_BRL || '80' }}
+          GOOD_MIN_BREAK_BRL: ${{ vars.GOOD_MIN_BREAK_BRL || '60' }}
 
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -63,15 +75,6 @@ jobs:
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL || vars.ALERT_EMAIL }}
           ALERT_EMAIL_CC: ${{ vars.ALERT_EMAIL_CC }}
 
-          TARGET_DISCOUNT_PCT: ${{ vars.TARGET_DISCOUNT_PCT || '35' }}
-          YELLOW_BAND_ABOVE_GREEN_PCT: ${{ vars.YELLOW_BAND_ABOVE_GREEN_PCT || '6' }}
-          GREEN_THRESHOLD_PREMIUM_PCT: ${{ vars.GREEN_THRESHOLD_PREMIUM_PCT || '10' }}
-          YELLOW_THRESHOLD_PREMIUM_PCT: ${{ vars.YELLOW_THRESHOLD_PREMIUM_PCT || '10' }}
-          YELLOW_RESEND_HOURS: ${{ vars.YELLOW_RESEND_HOURS || '0' }}
-          YELLOW_MIN_BREAK_BRL: ${{ vars.YELLOW_MIN_BREAK_BRL || '60' }}
-          GREEN_MIN_BREAK_BRL: ${{ vars.GREEN_MIN_BREAK_BRL || '80' }}
-          MAX_STOPS_PREFERENCE: ${{ vars.MAX_STOPS_PREFERENCE || '2' }}
-          PREFERRED_DEPARTURE_DATES: ${{ vars.PREFERRED_DEPARTURE_DATES || '2026-07-24,2026-07-25' }}
-          MARKET_REFERENCE_SEED_BRL: ${{ vars.MARKET_REFERENCE_SEED_BRL || '4200' }}
           TEST_EMAIL: ${{ inputs.test_email || 'false' }}
+          PYTHONPATH: .
         run: python main.py

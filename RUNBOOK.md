@@ -1,194 +1,79 @@
-# Runbook — Flight Tracker SAO → PAR (grátis)
+# Runbook — Flight Tracker SAO ⇄ EU (budget A)
 
-Monitor de passagens **só ida** (23–27/07/2026) com **até 3 fontes**, alerta por **e-mail** e estado persistente no GitHub.
+Caçador de oportunidades **ida e volta** São Paulo → Europa (França / Madri / próximos), horizonte **6 meses**, stay **7–14 dias**.
 
-## Arquitetura (100% free tier)
+## Arquitetura (≤ R$20/mês)
 
-| Componente | Serviço | Custo |
-|------------|---------|-------|
-| Fonte 1 | [Travelpayouts](https://www.travelpayouts.com/) Aviasales Data API | Grátis |
-| Fonte 2 | [SerpApi](https://serpapi.com/) Google Flights | 250 buscas/mês grátis |
-| Fonte 3 | Travelpayouts range + grouped + SerpApi Explore | Grátis (mesmos tokens) |
-| E-mail | [Resend](https://resend.com/) ou SMTP (Gmail/Brevo) | Grátis |
-| Host | GitHub Actions (repo público) | Grátis |
-| Estado | Repository Variable `FLIGHT_TRACKER_STATE` | Grátis |
+| Camada | Serviço | Custo |
+|--------|---------|-------|
+| L0 sinais | Melhores Destinos RSS | Grátis |
+| L1 rede | Travelpayouts Data API | Grátis |
+| L2 live | SerpApi (250/mês free) | Grátis |
+| E-mail | Resend ou SMTP | Grátis |
+| Host | GitHub Actions | Grátis |
+| Estado | Variable `FLIGHT_TRACKER_STATE` | Grátis |
 
-**Cron nativo:** a cada 15 min (`*/15 * * * *` UTC) — 4 tentativas/hora; GitHub descarta ~60% delas mas é improvável descartar todas as 4.
-**Trigger externo (recomendado):** cron-job.org dispara `workflow_dispatch` toda hora no :05 — bypassa o scheduler do GitHub por completo. Ver seção 6b.
+**Não usar** Amadeus Self-Service (descontinuado). **Não** Telegram Bot em canais MD/PI (exige admin).
 
-| Fonte | Frequência | Cache | Setup |
-|-------|------------|-------|-------|
-| **Travelpayouts dates** | 5 datas/run | ~48h (Aviasales) — **não dá para resetar** no free tier | `TRAVELPAYOUTS_TOKEN` ✓ |
-| **Travelpayouts range** | faixa 55–115% da ref. | cache ~48h, slice diferente | mesmo token ✓ |
-| **Travelpayouts grouped** | 1 call/mês julho | mínimo por data agrupado | mesmo token ✓ |
-| **SerpApi Google Flights** | 1 data/run, `no_cache` | fresco a cada hora | `SERPAPI_KEY` ✓ |
-| **SerpApi Travel Explore** | mesma data, a cada 4 runs | ângulo alternativo Google | mesmo `SERPAPI_KEY` ✓ |
+### SerpApi ration (~8 calls/dia)
 
-### Travelpayouts e cache
+1. Até `SERPAPI_DEALS_PER_DAY` (default 2) → `google_flights_deals`
+2. Confirmar candidatos MD RSS
+3. Confirmar top outliers Travelpayouts com GF RT + `price_insights`
 
-A Data API **sempre** serve cache Aviasales (até 48h). Não há reset gratuito. Compensamos com **3 endpoints Travelpayouts** + **2 engines SerpApi** — zero cadastro novo.
+Governor em `serpapi_budget.py` persiste contadores no state.
 
-## Preço de referência e alvos (dinâmico)
+## Secrets
 
-**Como a referência é calculada**
+| Nome | Obrigatório |
+|------|-------------|
+| `TRAVELPAYOUTS_TOKEN` | sim (L1) |
+| `SERPAPI_KEY` | sim (L2) |
+| `RESEND_API_KEY` ou `SMTP_*` | sim (e-mail) |
+| `ALERT_EMAIL` | sim |
+| `GH_PAT` | sim (persistir state; scope `variables`) |
 
-Para cada data monitorada (23–27/07), pegamos o **menor preço encontrado** e tiramos a **média** desses mínimos. Ex.: mínimos R$ 2.448 + R$ 2.500 + R$ 2.448 → ref. **R$ 2.465**. O scan mostra o melhor achado global; a referência é o preço típico na faixa de datas.
+## Variables sugeridas
 
-| Tier | Regra | Exemplo (ref. R$ 2.508) |
-|------|-------|--------------------------|
-| **Verde** (compra CAPES) | preço **<** `ref × 65% × 1,10` | **< R$ 1.794** |
-| **Amarelo** (observação) | `verde ≤ preço < verde × 1,06 × 1,10` | **R$ 1.794 – 2.091** |
+| Nome | Default |
+|------|---------|
+| `DESTINATION_CITIES` | `PAR,MAD,LYS,NCE,MRS,BCN` |
+| `ORIGIN_AIRPORTS` | `GRU,VCP` |
+| `HORIZON_MONTHS` | `6` |
+| `TRIP_LENGTH_MIN` / `MAX` | `7` / `14` |
+| `RARE_DISCOUNT_PCT` | `40` |
+| `GOOD_DISCOUNT_PCT` | `25` |
+| `MAX_ALERT_PRICE_BRL` | `3500` |
+| `SERPAPI_MONTHLY_BUDGET` | `250` |
+| `SERPAPI_DAILY_SOFT_CAP` | `8` |
+| `MD_RSS_ENABLED` | `true` |
 
-Reenvio exige quebra: amarelo Δ≥R$ 60, verde Δ≥R$ 80 vs último alerta do tier.
+## Schedule
 
-E-mails mostram **horário de saída/chegada** quando a API retorna; ranking prioriza datas 24/25, voos **diretos** e menos escalas.
+- Workflow `tracker.yml`: cron `5 * * * *` UTC + `workflow_dispatch`
+- `cancel-in-progress: true`
+- Dispatcher sleep-58m **removido**
+- Recomendado: cron-job.org disparando `workflow_dispatch` no :05 de cada hora (bypass do scheduler GitHub)
 
-Variáveis opcionais: `TARGET_DISCOUNT_PCT`, `YELLOW_BAND_ABOVE_GREEN_PCT`, `YELLOW_MIN_BREAK_BRL`, `GREEN_MIN_BREAK_BRL`.
+### cron-job.org
 
-## 1. Criar repositório público
+`POST https://api.github.com/repos/OWNER/REPO/actions/workflows/tracker.yml/dispatches`
+
+Header: `Authorization: Bearer <GH_PAT>`, body `{"ref":"main"}`.
+
+## Local
 
 ```bash
-git init
-git add .
-git commit -m "feat: flight tracker SAO-PAR multi-source"
-git remote add origin https://github.com/SEU_USUARIO/flightsearch.git
-git push -u origin main
+export TRAVELPAYOUTS_TOKEN=...
+export SERPAPI_KEY=...
+export ALERT_EMAIL=voce@email.com
+export RESEND_API_KEY=...
+python main.py
 ```
-
-Nunca commite tokens. Tudo sensível vai em **Secrets** e **Variables**.
-
-## 2. Travelpayouts (obrigatório para free tier)
-
-1. Cadastre-se em https://www.travelpayouts.com/
-2. Perfil → **API token** → copie o token
-3. GitHub → Settings → Secrets → **New repository secret**
-   - Nome: `TRAVELPAYOUTS_TOKEN`
-   - Valor: seu token
-
-## 3. SerpApi (recomendado — Google Flights)
-
-1. Cadastre-se em https://serpapi.com/ (250 buscas/mês grátis)
-2. Dashboard → API Key
-3. Secret: `SERPAPI_KEY`
-
-## 4. E-mail — segundo destinatário (encaminhamento Gmail)
-
-O jeito mais simples: alertas chegam no **seu** Gmail via Resend; você **encaminha automaticamente** pro Thiago (ou quem for). Zero config no GitHub.
-
-1. Gmail → ⚙️ **Ver todas as configurações** → **Encaminhamento e POP/IMAP**
-2. **Adicionar endereço de encaminhamento** → `thiagofm.br@gmail.com`
-3. Thiago confirma o link que o Google manda
-4. Crie um **filtro** (recomendado — só alertas, não todo o inbox):
-   - **Configurações** → **Filtros e endereços bloqueados** → **Criar filtro**
-   - Assunto contém: `SAO→PAR` (ou remetente contém `resend.dev`)
-   - Ação: **Encaminhar para** `thiagofm.br@gmail.com`
-5. Deixe `ALERT_EMAIL_CC` **vazio** no GitHub (só `ALERT_EMAIL` = seu Gmail)
-
-Pronto: Resend continua funcionando; Thiago recebe cópia automática.
-
-### Alternativa: SMTP ou CC no GitHub
-
-Só se não quiser encaminhamento — exige senha de app (Gmail) ou domínio verificado (Resend). Ver seções 4b/4c.
-
-## 4b. E-mail — opção A: Resend (um destinatário)
-
-1. https://resend.com/ → conta grátis (3.000 e-mails/mês)
-2. Secret: `RESEND_API_KEY`
-3. `onboarding@resend.dev` → só o e-mail da conta Resend
-4. Domínio verificado no Resend → vários destinatários sem SMTP
-
-## 4c. E-mail — opção B: Brevo SMTP
-
-300 e-mails/dia grátis — mesmos secrets `SMTP_*` com host `smtp-relay.brevo.com`.
-
-## 5. Variáveis do repositório (não sensíveis)
-
-Settings → Secrets and variables → Actions → **Variables**:
-
-| Nome | Valor sugerido |
-|------|----------------|
-| `ALERT_EMAIL` | seu@email.com |
-| `EMAIL_FROM` | onboarding@resend.dev (ou seu remetente) |
-| `TARGET_DISCOUNT_PCT` | `35` (30–40 conforme preferência) |
-| `MARKET_REFERENCE_SEED_BRL` | `4200` |
-| `FLIGHT_TRACKER_STATE` | *(deixe vazio na 1ª vez)* |
-
-## 6b. Trigger externo garantido — cron-job.org (recomendado)
-
-O scheduler do GitHub pode atrasar ou pular runs agendados por horas. A solução: um serviço externo que chama a API do GitHub para disparar o workflow.
-
-**Setup (2 min, grátis):**
-
-1. Acesse https://console.cron-job.org → crie conta gratuita
-2. **New cronjob** com estes parâmetros:
-
-| Campo | Valor |
-|-------|-------|
-| URL | `https://api.github.com/repos/JoaoToni12/flightsearch/actions/workflows/tracker.yml/dispatches` |
-| Método | `POST` |
-| Schedule | Every hour, minute `5` (`:05` — não colide com o cron nativo das :00) |
-
-3. Em **Headers**, adicione:
-   ```
-   Authorization: Bearer <SEU_GH_PAT>
-   Accept: application/vnd.github+json
-   Content-Type: application/json
-   X-GitHub-Api-Version: 2022-11-28
-   ```
-4. Em **Request body**:
-   ```json
-   {"ref": "main"}
-   ```
-5. Salve. A resposta esperada é HTTP 204 (sem corpo).
-
-> Use um **Fine-grained PAT** separado com apenas `Actions: Write` — não reutilize o GH_PAT principal que tem permissão de escrita em Variables.
-
-**Resultado:** a cada hora às :05 o cron-job.org dispara o workflow independentemente do GitHub. O cron nativo (`*/15`) continua como segundo nível de backup.
-
-## 6. PAT para gravar estado (anti-spam)
-
-O `GITHUB_TOKEN` padrão **não grava** Repository Variables.
-
-1. GitHub → Settings → Developer settings → **Fine-grained PAT**
-2. Permissões no repo: **Actions: Read and write** (Variables)
-3. Secret: `GH_PAT`
-
-## 7. Testar manualmente
-
-Actions → **Flight Tracker SAO→PAR** → **Run workflow**.
-
-Logs esperados:
-
-```
-Scan: R$ X | Ref: R$ Y | Alvo (-35%): R$ Z | Fontes: ['travelpayouts', 'serpapi_google_flights']
-```
-
-## 8. Segurança (repo público)
-
-- Secrets **nunca** aparecem em logs se você não der `print` neles.
-- `FLIGHT_TRACKER_STATE` contém apenas preços e metadados de voo — sem PII.
-- Não commite `.env` (já está no `.gitignore`).
-
-## 9. Ajustes opcionais
-
-| Variable | Efeito |
-|----------|--------|
-| `TARGET_DISCOUNT_PCT` | `30` = alerta mais fácil; `40` = mais exigente |
-| `REFERENCE_RECALIBRATE_DAYS` | Padrão `7` |
-| `SERPAPI_ENABLED` | `false` desliga Google Flights |
-| `FLIGHT_DEPARTURE_DATES` | Lista CSV de datas |
-
-## 10. Limitações conhecidas
-
-- **Travelpayouts** usa cache (até 48h) — pode atrasar promo relâmpago; SerpApi compensa.
-- **SerpApi free** não suporta 5 datas a cada 2h — por isso o round-robin.
-- Links Aviasales são afiliados; Google Flights / Skyscanner são gerados como alternativa CAPES-friendly.
 
 ## Troubleshooting
 
-| Problema | Solução |
-|----------|---------|
-| `Nenhuma oferta encontrada` | Confira `TRAVELPAYOUTS_TOKEN` |
-| E-mail não chega | Resend: só envia para e-mail da conta no sandbox |
-| Estado não persiste | Confira `GH_PAT` com permissão Variables write |
-| SerpApi 401 | `SERPAPI_KEY` inválida ou cota esgotada |
+- **Sem alertas:** baselines ainda curtos (primeiros dias); ou preços > `MAX_ALERT_PRICE_BRL`
+- **SerpApi silencioso:** cota do mês esgotada — ver logs `SerpApi budget`
+- **MD sem candidatos EU:** feed sem promo França/Espanha naquele ciclo (normal)
+- **State grande:** `seen_md_guids` capped em 200; baselines por rota só medianas + séries curtas
