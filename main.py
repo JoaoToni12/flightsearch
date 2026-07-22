@@ -303,9 +303,16 @@ def run() -> int:
         logger.info("Sem alerta (%s).", pending)
         test_mode = os.getenv("TEST_EMAIL", "").lower() == "true"
         digest_due = False
+        # Bootstrap silencioso: 1ª run (sem digest_at) não manda e-mail — só marca pulso.
         if SCAN_DIGEST_HOURS > 0:
             elapsed = _hours_since(state.get("last_scan_digest_at"))
-            digest_due = elapsed is None or elapsed >= SCAN_DIGEST_HOURS
+            if elapsed is None:
+                state["last_scan_digest_at"] = (
+                    datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+                )
+                logger.info("Digest bootstrap — sem e-mail nesta run.")
+            else:
+                digest_due = elapsed >= SCAN_DIGEST_HOURS
         if test_mode or digest_due:
             reason = pending if not test_mode else f"[TESTE] {pending}"
             if digest_due and not test_mode:
@@ -330,7 +337,12 @@ def run() -> int:
                     )
                     logger.info("E-mail pulso enviado.")
 
-    save_state(state)
+    saved = save_state(state)
+    if not saved:
+        logger.error(
+            "State NÃO persistido — próximo run pode reenviar digest/alertas. "
+            "Corriga o secret GH_PAT (Variables write)."
+        )
     return 0
 
 

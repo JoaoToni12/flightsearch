@@ -82,7 +82,8 @@ def load_state() -> dict[str, Any]:
         return default_state()
 
 
-def save_state(state: dict[str, Any]) -> None:
+def save_state(state: dict[str, Any]) -> bool:
+    """Persist state. Returns False if GitHub Variables write fails (auth/scope)."""
     state["updated_at"] = _utc_now_iso()
     payload = json.dumps(state, ensure_ascii=False)
 
@@ -90,7 +91,7 @@ def save_state(state: dict[str, Any]) -> None:
     repo = os.getenv("GITHUB_REPOSITORY")
     if not token or not repo:
         os.environ["FLIGHT_TRACKER_STATE"] = payload
-        return
+        return True
 
     owner, name = repo.split("/", 1)
     headers = {
@@ -102,6 +103,12 @@ def save_state(state: dict[str, Any]) -> None:
     var_url = f"{base}/{STATE_VARIABLE_NAME}"
 
     get_resp = requests.get(var_url, headers=headers, timeout=30)
+    if get_resp.status_code in (401, 403):
+        logger.error(
+            "Falha ao ler/salvar state (%s). Verifique GH_PAT (scope: repo + Actions Variables).",
+            get_resp.status_code,
+        )
+        return False
     if get_resp.status_code == 404:
         create = requests.post(
             base,
@@ -114,10 +121,11 @@ def save_state(state: dict[str, Any]) -> None:
                 "Falha ao criar state (%s). Verifique GH_PAT com permissão de Actions Variables.",
                 create.status_code,
             )
-            return
+            return False
         create.raise_for_status()
-        return
+        return True
 
+    get_resp.raise_for_status()
     patch = requests.patch(
         var_url,
         headers=headers,
@@ -129,5 +137,6 @@ def save_state(state: dict[str, Any]) -> None:
             "Falha ao salvar state (%s). Verifique GH_PAT com permissão de Actions Variables.",
             patch.status_code,
         )
-        return
+        return False
     patch.raise_for_status()
+    return True

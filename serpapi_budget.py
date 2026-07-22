@@ -29,6 +29,7 @@ def ensure_budget_fields(state: dict) -> None:
         state["serpapi_deals_day_key"] = ""
         state["serpapi_deals_today"] = 0
         state["serpapi_rate_limited"] = False
+        state["serpapi_month_exhausted"] = False
     if state.get("serpapi_day_key") != day:
         state["serpapi_day_key"] = day
         state["serpapi_calls_today"] = 0
@@ -36,6 +37,13 @@ def ensure_budget_fields(state: dict) -> None:
         if state.get("serpapi_deals_day_key") != day:
             state["serpapi_deals_day_key"] = day
             state["serpapi_deals_today"] = 0
+    # Month exhaustion survives day rollover until month_key changes.
+    if state.get("serpapi_month_exhausted"):
+        state["serpapi_rate_limited"] = True
+        state["serpapi_calls_month"] = max(
+            int(state.get("serpapi_calls_month") or 0),
+            SERPAPI_MONTHLY_BUDGET,
+        )
 
 
 def remaining_month(state: dict) -> int:
@@ -51,20 +59,27 @@ def remaining_day(state: dict) -> int:
 
 
 def mark_rate_limited(state: dict) -> None:
-    """Stop further SerpApi calls this run/day after HTTP 429."""
+    """Stop further SerpApi calls for the rest of the month after HTTP 429."""
     ensure_budget_fields(state)
     state["serpapi_rate_limited"] = True
-    # Burn remaining daily soft cap so can_spend stays false.
+    state["serpapi_month_exhausted"] = True
     state["serpapi_calls_today"] = max(
         int(state.get("serpapi_calls_today") or 0),
         SERPAPI_DAILY_SOFT_CAP,
     )
-    logger.warning("SerpApi rate-limited (429) — pausando calls pelo resto do dia.")
+    state["serpapi_calls_month"] = max(
+        int(state.get("serpapi_calls_month") or 0),
+        SERPAPI_MONTHLY_BUDGET,
+    )
+    logger.warning(
+        "SerpApi rate-limited (429) — pausando até o próximo mês de cota (%s).",
+        state.get("serpapi_month_key"),
+    )
 
 
 def can_spend(state: dict, n: int = 1) -> bool:
     ensure_budget_fields(state)
-    if state.get("serpapi_rate_limited"):
+    if state.get("serpapi_rate_limited") or state.get("serpapi_month_exhausted"):
         return False
     return remaining_month(state) >= n and remaining_day(state) >= n
 

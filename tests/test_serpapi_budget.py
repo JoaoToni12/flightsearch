@@ -22,4 +22,10 @@ def test_rate_limit_blocks_spend():
     state: dict = {}
     ensure_budget_fields(state)
     mark_rate_limited(state)
+    assert state.get("serpapi_month_exhausted") is True
+    assert not can_spend(state, 1)
+    # Day rollover must not revive SerpApi until month key changes.
+    state["serpapi_day_key"] = "1999-01-01"
+    ensure_budget_fields(state)
+    assert state.get("serpapi_month_exhausted") is True
     assert not can_spend(state, 1)

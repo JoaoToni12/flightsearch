@@ -63,7 +63,7 @@ SCAN_DIGEST_HOURS = float(os.getenv("SCAN_DIGEST_HOURS", "24"))
 BASELINE_HISTORY_MAX = int(os.getenv("BASELINE_HISTORY_MAX", "24"))
 SEEN_MD_GUIDS_MAX = int(os.getenv("SEEN_MD_GUIDS_MAX", "200"))
 
-SERPAPI_ENABLED = os.getenv("SERPAPI_ENABLED", "true").lower() == "true"
+SERPAPI_ENABLED = os.getenv("SERPAPI_ENABLED", "false").lower() == "true"
 TRAVELPAYOUTS_ENABLED = os.getenv("TRAVELPAYOUTS_ENABLED", "true").lower() == "true"
 MD_RSS_ENABLED = os.getenv("MD_RSS_ENABLED", "true").lower() == "true"
 

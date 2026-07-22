@@ -41,7 +41,7 @@ jobs:
 
           TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
-          SERPAPI_ENABLED: ${{ vars.SERPAPI_ENABLED || 'true' }}
+          SERPAPI_ENABLED: ${{ vars.SERPAPI_ENABLED || 'false' }}
           SERPAPI_MONTHLY_BUDGET: ${{ vars.SERPAPI_MONTHLY_BUDGET || '250' }}
           SERPAPI_DAILY_SOFT_CAP: ${{ vars.SERPAPI_DAILY_SOFT_CAP || '8' }}
           SERPAPI_DEALS_PER_DAY: ${{ vars.SERPAPI_DEALS_PER_DAY || '2' }}
