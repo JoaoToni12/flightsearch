@@ -28,9 +28,11 @@ def ensure_budget_fields(state: dict) -> None:
         state["serpapi_calls_month"] = 0
         state["serpapi_deals_day_key"] = ""
         state["serpapi_deals_today"] = 0
+        state["serpapi_rate_limited"] = False
     if state.get("serpapi_day_key") != day:
         state["serpapi_day_key"] = day
         state["serpapi_calls_today"] = 0
+        state["serpapi_rate_limited"] = False
         if state.get("serpapi_deals_day_key") != day:
             state["serpapi_deals_day_key"] = day
             state["serpapi_deals_today"] = 0
@@ -48,7 +50,22 @@ def remaining_day(state: dict) -> int:
     return max(0, SERPAPI_DAILY_SOFT_CAP - used)
 
 
+def mark_rate_limited(state: dict) -> None:
+    """Stop further SerpApi calls this run/day after HTTP 429."""
+    ensure_budget_fields(state)
+    state["serpapi_rate_limited"] = True
+    # Burn remaining daily soft cap so can_spend stays false.
+    state["serpapi_calls_today"] = max(
+        int(state.get("serpapi_calls_today") or 0),
+        SERPAPI_DAILY_SOFT_CAP,
+    )
+    logger.warning("SerpApi rate-limited (429) — pausando calls pelo resto do dia.")
+
+
 def can_spend(state: dict, n: int = 1) -> bool:
+    ensure_budget_fields(state)
+    if state.get("serpapi_rate_limited"):
+        return False
     return remaining_month(state) >= n and remaining_day(state) >= n
 
 

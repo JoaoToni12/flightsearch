@@ -36,7 +36,13 @@ from fetchers.serpapi_deals_fetcher import fetch_serpapi_deals_offers
 from fetchers.serpapi_fetcher import confirm_candidate, confirm_route
 from notifier import AlertLevel, send_status_email, send_tiered_alert
 from ranking import top_offers
-from serpapi_budget import can_spend, ensure_budget_fields, record_spend, remaining_day
+from serpapi_budget import (
+    can_spend,
+    ensure_budget_fields,
+    mark_rate_limited,
+    record_spend,
+    remaining_day,
+)
 from state_manager import load_state, save_state
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -73,6 +79,13 @@ def _spend(state: dict):
     return _cb
 
 
+def _on_rate_limited(state: dict):
+    def _cb() -> None:
+        mark_rate_limited(state)
+
+    return _cb
+
+
 def _confirm_top_discovery(
     state: dict,
     scored: list,
@@ -82,11 +95,12 @@ def _confirm_top_discovery(
     """Confirm cheapest high-score discovery offers with live GF (budget permitting)."""
     confirmed: list = []
     spend = _spend(state)
-    # Prefer unconfirmed TP/matrix offers with dates.
+    rate = _on_rate_limited(state)
     pool = [
         o
         for o in scored
         if o.departure_date
+        and o.return_date
         and o.source.startswith("travelpayouts")
         and o.price_brl <= MAX_ALERT_PRICE_BRL * 1.15
     ]
@@ -98,19 +112,22 @@ def _confirm_top_discovery(
         origin = offer.origin_airport if offer.origin_airport in {"GRU", "VCP"} else "GRU"
         dest = offer.destination_airport or offer.destination_city or "CDG"
         if len(dest) != 3:
-            dest = {"PAR": "CDG", "MAD": "MAD", "LYS": "LYS", "NCE": "NCE", "MRS": "MRS", "BCN": "BCN"}.get(
-                offer.destination_city, "CDG"
-            )
-        ret = offer.return_date
-        if not ret:
-            continue
+            dest = {
+                "PAR": "CDG",
+                "MAD": "MAD",
+                "LYS": "LYS",
+                "NCE": "NCE",
+                "MRS": "MRS",
+                "BCN": "BCN",
+            }.get(offer.destination_city, "CDG")
         live = confirm_route(
             origin=origin,
             destination=dest,
             departure_date=offer.departure_date,
-            return_date=ret,
+            return_date=offer.return_date,
             destination_city=offer.destination_city,
             spend_callback=spend,
+            on_rate_limited=rate,
         )
         tried += 1
         confirmed.extend(live)
@@ -137,6 +154,7 @@ def run() -> int:
 
     live_offers: list = []
     spend = _spend(state)
+    rate = _on_rate_limited(state)
 
     # L2a: deals (soft daily cap)
     deals_today = int(state.get("serpapi_deals_today") or 0)
@@ -145,20 +163,23 @@ def run() -> int:
         and deals_today < SERPAPI_DEALS_PER_DAY
         and can_spend(state, 1)
     ):
-        live_offers.extend(fetch_serpapi_deals_offers(spend_callback=spend))
+        live_offers.extend(
+            fetch_serpapi_deals_offers(spend_callback=spend, on_rate_limited=rate)
+        )
 
     # L2b: confirm MD signals first (highest precision)
     md_confirmed = 0
     for cand in candidates[:5]:
         if not can_spend(state, 1):
             break
-        batch = confirm_candidate(cand, spend_callback=spend)
+        batch = confirm_candidate(
+            cand, spend_callback=spend, on_rate_limited=rate
+        )
         if batch:
             live_offers.extend(batch)
             md_confirmed += 1
         _remember_md_guids(state, [cand.guid])
     if candidates and md_confirmed == 0:
-        # Still mark seen to avoid infinite re-queue of unconfirmable items without dates.
         _remember_md_guids(state, [c.guid for c in candidates[:10]])
 
     baselines = update_route_baselines(state, discovery + live_offers)

@@ -11,7 +11,6 @@ import requests
 
 from config import (
     DESTINATION_CITIES,
-    EU_SIGNAL_KEYWORDS,
     MD_RSS_ENABLED,
     MD_RSS_FEEDS,
     WATCHLIST_KEYWORDS,
@@ -60,10 +59,9 @@ def _match_dest(text: str) -> str:
 
 
 def _is_eu_signal(text: str) -> bool:
+    """Só watchlist (Paris/França/Madri/…) — evita varrer toda a Europa do feed."""
     lower = (text or "").lower()
-    if any(k in lower for k in WATCHLIST_KEYWORDS):
-        return True
-    return any(k in lower for k in EU_SIGNAL_KEYWORDS)
+    return any(k in lower for k in WATCHLIST_KEYWORDS)
 
 
 def _local(tag: str) -> str:
@@ -91,15 +89,12 @@ def _parse_feed(xml_text: str, feed_url: str) -> list[DealCandidate]:
         guid = _item_text(item, "guid") or link
         pub = _item_text(item, "pubDate")
         blob = f"{title}\n{desc}\n{link}"
-        if "/promocao" not in link and "passagem" not in blob.lower() and "voo" not in blob.lower():
-            # Keep promocao URLs; drop pure news unless keywords scream flights.
-            if not _is_eu_signal(blob):
-                continue
+        if "/promocao" not in link.lower() and "promocao" not in link.lower():
+            continue
         if not _is_eu_signal(blob):
             continue
         dest = _match_dest(blob)
-        # Prefer watchlist cities; still keep strong EU hits without exact city.
-        if not dest and not any(k in blob.lower() for k in WATCHLIST_KEYWORDS):
+        if not dest:
             continue
         price = _parse_price(blob)
         origin = "SAO" if ORIGIN_RE.search(blob) else ""
@@ -150,4 +145,5 @@ def fetch_md_rss_candidates(*, seen_guids: set[str] | None = None) -> list[DealC
             seen_this_run.add(cand.guid)
             found.append(cand)
     found.sort(key=lambda c: (c.price_hint_brl is None, c.price_hint_brl or 9e9))
-    return found
+    # Cap por run — evita enfileirar centenas de posts históricos do feed.
+    return found[:15]

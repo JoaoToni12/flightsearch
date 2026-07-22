@@ -125,6 +125,7 @@ def confirm_route(
     return_date: str,
     destination_city: str = "",
     spend_callback=None,
+    on_rate_limited=None,
 ) -> list[FlightOffer]:
     if not SERPAPI_ENABLED:
         return []
@@ -148,6 +149,11 @@ def confirm_route(
     }
     try:
         resp = requests.get(API_URL, params=params, timeout=120)
+        if resp.status_code == 429:
+            logger.error("SerpApi confirm 429 %s→%s", origin, destination)
+            if on_rate_limited:
+                on_rate_limited()
+            return []
         resp.raise_for_status()
         payload = resp.json()
     except requests.RequestException as exc:
@@ -189,6 +195,7 @@ def confirm_candidate(
     candidate: DealCandidate,
     *,
     spend_callback=None,
+    on_rate_limited=None,
 ) -> list[FlightOffer]:
     city = candidate.matched_dest or DESTINATION
     airports = CITY_AIRPORTS.get(city, [city])
@@ -198,8 +205,9 @@ def confirm_candidate(
     out = candidate.departure_date
     ret = candidate.return_date
     if not out or not ret:
-        out, ret = _default_dates()
-    # Try primary airport only (budget).
+        # Sem datas no RSS — não gastar SerpApi em chute genérico.
+        logger.info("MD candidato sem datas — skip confirm: %s", candidate.title[:80])
+        return []
     dest = airports[0]
     offers = confirm_route(
         origin=origin,
@@ -208,6 +216,7 @@ def confirm_candidate(
         return_date=ret,
         destination_city=city,
         spend_callback=spend_callback,
+        on_rate_limited=on_rate_limited,
     )
     for offer in offers:
         offer.signal_source = candidate.source

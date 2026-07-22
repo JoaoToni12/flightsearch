@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 import requests
 
 from config import MARKET_REFERENCE_SEED_BRL, STATE_VARIABLE_NAME
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now_iso() -> str:
@@ -106,6 +109,12 @@ def save_state(state: dict[str, Any]) -> None:
             json={"name": STATE_VARIABLE_NAME, "value": payload},
             timeout=30,
         )
+        if create.status_code in (401, 403):
+            logger.error(
+                "Falha ao criar state (%s). Verifique GH_PAT com permissão de Actions Variables.",
+                create.status_code,
+            )
+            return
         create.raise_for_status()
         return
 
@@ -115,4 +124,10 @@ def save_state(state: dict[str, Any]) -> None:
         json={"name": STATE_VARIABLE_NAME, "value": payload},
         timeout=30,
     )
+    if patch.status_code in (401, 403):
+        logger.error(
+            "Falha ao salvar state (%s). Verifique GH_PAT com permissão de Actions Variables.",
+            patch.status_code,
+        )
+        return
     patch.raise_for_status()

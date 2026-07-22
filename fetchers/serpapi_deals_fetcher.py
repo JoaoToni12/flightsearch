@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date, timedelta
+from typing import Callable
 
 import requests
 
@@ -19,7 +20,6 @@ from config import (
 )
 from links import google_flights_link
 from models import FlightOffer
-from times import split_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,6 @@ def _city_from_deal(deal: dict) -> str:
             if city == "MAD" and "barcelona" in name:
                 continue
             return city
-    # Airport → city
     airport_map = {
         "CDG": "PAR",
         "ORY": "PAR",
@@ -71,7 +70,8 @@ def _in_watchlist(deal: dict) -> bool:
 
 def fetch_serpapi_deals_offers(
     *,
-    spend_callback=None,
+    spend_callback: Callable[..., None] | None = None,
+    on_rate_limited: Callable[[], None] | None = None,
 ) -> list[FlightOffer]:
     if not SERPAPI_ENABLED:
         return []
@@ -87,7 +87,7 @@ def fetch_serpapi_deals_offers(
     hl = LOCALE.split("-")[0] if LOCALE else "pt"
 
     offers: list[FlightOffer] = []
-    origins = [o for o in ORIGIN_AIRPORTS if o][:2] or ["GRU"]
+    origins = [o for o in ORIGIN_AIRPORTS if o][:1] or ["GRU"]
 
     for dep_id in origins:
         params = {
@@ -103,6 +103,11 @@ def fetch_serpapi_deals_offers(
         }
         try:
             resp = requests.get(API_URL, params=params, timeout=120)
+            if resp.status_code == 429:
+                logger.error("SerpApi deals 429 %s — cota/rate limit", dep_id)
+                if on_rate_limited:
+                    on_rate_limited()
+                return offers
             resp.raise_for_status()
             payload = resp.json()
         except requests.RequestException as exc:
