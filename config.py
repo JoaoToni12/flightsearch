@@ -49,8 +49,8 @@ MAX_STOPS_PREFERENCE = int(os.getenv("MAX_STOPS_PREFERENCE", "2"))
 
 # Deal scoring thresholds (% below per-route baseline).
 RARE_DISCOUNT_PCT = float(os.getenv("RARE_DISCOUNT_PCT", "40"))
-GOOD_DISCOUNT_PCT = float(os.getenv("GOOD_DISCOUNT_PCT", "25"))
-MAX_ALERT_PRICE_BRL = float(os.getenv("MAX_ALERT_PRICE_BRL", "3500"))
+GOOD_DISCOUNT_PCT = float(os.getenv("GOOD_DISCOUNT_PCT", "20"))
+MAX_ALERT_PRICE_BRL = float(os.getenv("MAX_ALERT_PRICE_BRL", "4000"))
 
 # Absolute safety seed when a route has no history yet.
 MARKET_REFERENCE_SEED_BRL = float(os.getenv("MARKET_REFERENCE_SEED_BRL", "4500"))

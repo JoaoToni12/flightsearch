@@ -32,6 +32,7 @@ from config import (
     SERPAPI_DEALS_PER_DAY,
 )
 from fetchers import fetch_discovery_offers, fetch_signal_candidates
+from fetchers.md_rss_fetcher import candidate_to_offer
 from fetchers.serpapi_deals_fetcher import fetch_serpapi_deals_offers
 from fetchers.serpapi_fetcher import confirm_candidate, confirm_route
 from notifier import AlertLevel, send_status_email, send_tiered_alert
@@ -44,6 +45,7 @@ from serpapi_budget import (
     remaining_day,
 )
 from state_manager import load_state, save_state
+from trip_window import filter_trip_window
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -150,11 +152,28 @@ def run() -> int:
         hunt_price_min=hunt_min,
         hunt_price_max=hunt_max,
     )
-    logger.info("L1 discovery: %d ofertas | caça R$ %.0f–%.0f", len(discovery), hunt_min, hunt_max)
+    discovery, dropped_disc = filter_trip_window(discovery)
+    logger.info(
+        "L1 discovery: %d ofertas in-window (drop %d fora 7–14d) | caça R$ %.0f–%.0f",
+        len(discovery),
+        dropped_disc,
+        hunt_min,
+        hunt_max,
+    )
 
     live_offers: list = []
     spend = _spend(state)
     rate = _on_rate_limited(state)
+
+    # L0 typed: MD com datas+preço vira oferta scorable mesmo sem SerpApi.
+    md_offers = []
+    for cand in candidates:
+        offer = candidate_to_offer(cand)
+        if offer:
+            md_offers.append(offer)
+    if md_offers:
+        live_offers.extend(md_offers)
+        logger.info("L0 MD tipados (sem SerpApi): %d ofertas 7–14d", len(md_offers))
 
     # L2a: deals (soft daily cap)
     deals_today = int(state.get("serpapi_deals_today") or 0)
@@ -170,6 +189,8 @@ def run() -> int:
     # L2b: confirm MD signals first (highest precision)
     md_confirmed = 0
     for cand in candidates[:5]:
+        if not cand.departure_date or not cand.return_date:
+            continue
         if not can_spend(state, 1):
             break
         batch = confirm_candidate(
@@ -182,8 +203,12 @@ def run() -> int:
     if candidates and md_confirmed == 0:
         _remember_md_guids(state, [c.guid for c in candidates[:10]])
 
+    live_offers, dropped_live = filter_trip_window(live_offers)
+    if dropped_live:
+        logger.info("L2/L0 live: drop %d fora da janela 7–14d", dropped_live)
+
     baselines = update_route_baselines(state, discovery + live_offers)
-    scored_discovery = score_offers(discovery, baselines)
+    scored_discovery = score_offers(discovery, baselines, state)
 
     # L2c: confirm top discovery outliers if budget remains
     remaining = remaining_day(state)
@@ -195,8 +220,9 @@ def run() -> int:
                 limit=min(3, remaining),
             )
         )
+        live_offers, _ = filter_trip_window(live_offers)
 
-    offers = score_offers(discovery + live_offers, baselines)
+    offers = score_offers(discovery + live_offers, baselines, state)
     if not offers and not candidates:
         logger.error("Nenhuma oferta/sinal. Verifique TRAVELPAYOUTS_TOKEN / feeds MD.")
         save_state(state)
@@ -214,7 +240,7 @@ def run() -> int:
     )
     # Re-score with updated baselines
     baselines = dict(state.get("route_baseline_medians") or baselines)
-    offers = score_offers(offers, baselines)
+    offers = score_offers(offers, baselines, state)
 
     green_target, yellow_target = compute_thresholds(reference)
     state["target_price_brl"] = green_target

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import xml.etree.ElementTree as ET
+from datetime import date
 from email.utils import parsedate_to_datetime
 
 import requests
@@ -13,9 +14,14 @@ from config import (
     DESTINATION_CITIES,
     MD_RSS_ENABLED,
     MD_RSS_FEEDS,
+    ORIGIN_AIRPORTS,
+    TRIP_LENGTH_MAX,
+    TRIP_LENGTH_MIN,
     WATCHLIST_KEYWORDS,
 )
-from models import DealCandidate
+from date_parse import parse_trip_dates
+from models import DealCandidate, FlightOffer
+from trip_window import compute_trip_days
 
 logger = logging.getLogger(__name__)
 
@@ -99,11 +105,14 @@ def _parse_feed(xml_text: str, feed_url: str) -> list[DealCandidate]:
         price = _parse_price(blob)
         origin = "SAO" if ORIGIN_RE.search(blob) else ""
         pub_iso = ""
+        hint_date: date | None = None
         if pub:
             try:
-                pub_iso = parsedate_to_datetime(pub).date().isoformat()
+                hint_date = parsedate_to_datetime(pub).date()
+                pub_iso = hint_date.isoformat()
             except (TypeError, ValueError, IndexError):
                 pub_iso = ""
+        dep, ret = parse_trip_dates(blob, hint_date=hint_date)
         candidates.append(
             DealCandidate(
                 title=title,
@@ -111,6 +120,8 @@ def _parse_feed(xml_text: str, feed_url: str) -> list[DealCandidate]:
                 source="melhores_destinos_rss",
                 price_hint_brl=price,
                 matched_dest=dest,
+                departure_date=dep,
+                return_date=ret,
                 pub_date=pub_iso,
                 guid=guid,
                 origin_hint=origin,
@@ -119,6 +130,89 @@ def _parse_feed(xml_text: str, feed_url: str) -> list[DealCandidate]:
         )
     logger.info("MD RSS %s: %d candidatos EU", feed_url, len(candidates))
     return candidates
+
+
+def _strip_html(html: str) -> str:
+    text = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", html)
+    text = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", text)
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text)
+
+
+def enrich_candidate_dates(
+    candidates: list[DealCandidate],
+    *,
+    max_fetches: int = 5,
+) -> list[DealCandidate]:
+    """GET leve da página da promo quando o RSS não trouxe datas."""
+    headers = {
+        "User-Agent": "flightsearch/2.0 (+https://github.com/JoaoToni12/flightsearch)",
+        "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+    }
+    fetched = 0
+    for cand in candidates:
+        if cand.departure_date and cand.return_date:
+            continue
+        if fetched >= max_fetches or not cand.link:
+            continue
+        try:
+            resp = requests.get(cand.link, headers=headers, timeout=25)
+            resp.raise_for_status()
+            fetched += 1
+        except requests.RequestException as exc:
+            logger.warning("MD enrich falhou (%s): %s", cand.link[:80], exc)
+            continue
+        hint = None
+        if cand.pub_date:
+            try:
+                hint = date.fromisoformat(cand.pub_date)
+            except ValueError:
+                hint = None
+        body = _strip_html(resp.text)[:8000]
+        blob = f"{cand.raw_text}\n{body}"
+        dep, ret = parse_trip_dates(blob, hint_date=hint)
+        if dep and ret:
+            cand.departure_date = dep
+            cand.return_date = ret
+            if cand.price_hint_brl is None:
+                cand.price_hint_brl = _parse_price(blob)
+            cand.raw_text = blob[:2000]
+            logger.info(
+                "MD datas enriquecidas: %s → %s/%s",
+                cand.title[:60],
+                dep,
+                ret,
+            )
+    return candidates
+
+
+def candidate_to_offer(candidate: DealCandidate) -> FlightOffer | None:
+    """Converte sinal MD tipado (datas + preço) em oferta scorable sem SerpApi."""
+    if not candidate.departure_date or not candidate.return_date:
+        return None
+    if candidate.price_hint_brl is None or candidate.price_hint_brl <= 0:
+        return None
+    days = compute_trip_days(candidate.departure_date, candidate.return_date)
+    if days is None or not (TRIP_LENGTH_MIN <= days <= TRIP_LENGTH_MAX):
+        return None
+    origin = candidate.origin_hint if candidate.origin_hint in {"GRU", "VCP", "CGH"} else ""
+    if not origin:
+        origin = ORIGIN_AIRPORTS[0] if ORIGIN_AIRPORTS else "GRU"
+    return FlightOffer(
+        price_brl=float(candidate.price_hint_brl),
+        airline="N/A",
+        departure_date=candidate.departure_date,
+        return_date=candidate.return_date,
+        trip_days=days,
+        duration_min=None,
+        stops=1,
+        source="melhores_destinos_rss",
+        link=candidate.link,
+        origin_airport=origin,
+        destination_airport=candidate.matched_dest,
+        destination_city=candidate.matched_dest,
+        signal_source=candidate.source,
+    )
 
 
 def fetch_md_rss_candidates(*, seen_guids: set[str] | None = None) -> list[DealCandidate]:
@@ -146,4 +240,5 @@ def fetch_md_rss_candidates(*, seen_guids: set[str] | None = None) -> list[DealC
             found.append(cand)
     found.sort(key=lambda c: (c.price_hint_brl is None, c.price_hint_brl or 9e9))
     # Cap por run — evita enfileirar centenas de posts históricos do feed.
-    return found[:15]
+    found = found[:15]
+    return enrich_candidate_dates(found, max_fetches=5)

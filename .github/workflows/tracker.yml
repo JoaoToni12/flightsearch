@@ -60,8 +60,8 @@ jobs:
           TRAVELPAYOUTS_ENABLED: ${{ vars.TRAVELPAYOUTS_ENABLED || 'true' }}
 
           RARE_DISCOUNT_PCT: ${{ vars.RARE_DISCOUNT_PCT || '40' }}
-          GOOD_DISCOUNT_PCT: ${{ vars.GOOD_DISCOUNT_PCT || '25' }}
-          MAX_ALERT_PRICE_BRL: ${{ vars.MAX_ALERT_PRICE_BRL || '3500' }}
+          GOOD_DISCOUNT_PCT: ${{ vars.GOOD_DISCOUNT_PCT || '20' }}
+          MAX_ALERT_PRICE_BRL: ${{ vars.MAX_ALERT_PRICE_BRL || '4000' }}
           MARKET_REFERENCE_SEED_BRL: ${{ vars.MARKET_REFERENCE_SEED_BRL || '4500' }}
           RARE_MIN_BREAK_BRL: ${{ vars.RARE_MIN_BREAK_BRL || '80' }}
           GOOD_MIN_BREAK_BRL: ${{ vars.GOOD_MIN_BREAK_BRL || '60' }}

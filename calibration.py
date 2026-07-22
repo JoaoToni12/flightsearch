@@ -78,9 +78,21 @@ def update_route_baselines(state: dict, offers: list[FlightOffer]) -> dict[str, 
     return baselines
 
 
-def score_offer(offer: FlightOffer, baselines: dict[str, float]) -> FlightOffer:
+def score_offer(offer: FlightOffer, baselines: dict[str, float], state: dict | None = None) -> FlightOffer:
     key = route_key(offer)
-    baseline = offer.baseline_brl or baselines.get(key) or MARKET_REFERENCE_SEED_BRL
+    median = baselines.get(key)
+    if offer.baseline_brl is not None:
+        baseline = float(offer.baseline_brl)
+    elif state is None:
+        baseline = float(median or MARKET_REFERENCE_SEED_BRL)
+    else:
+        history = state.get("route_baselines") or {}
+        series = list(history.get(key) or [])
+        # Histórico fino: floor no seed pra não colapsar discount% no piso do dia.
+        if median is not None and len(series) >= 5:
+            baseline = float(median)
+        else:
+            baseline = max(float(median or 0), MARKET_REFERENCE_SEED_BRL)
     offer.baseline_brl = float(baseline)
     if baseline > 0:
         offer.discount_pct = round((1 - offer.price_brl / baseline) * 100, 1)
@@ -93,14 +105,20 @@ def score_offer(offer: FlightOffer, baselines: dict[str, float]) -> FlightOffer:
         score += 10
     if offer.source == "serpapi_deals" and (offer.discount_pct or 0) >= GOOD_DISCOUNT_PCT:
         score += 8
+    if offer.source == "melhores_destinos_rss":
+        score += 5
     if offer.stops == 0:
         score += 3
     offer.deal_score = round(score, 2)
     return offer
 
 
-def score_offers(offers: list[FlightOffer], baselines: dict[str, float]) -> list[FlightOffer]:
-    return [score_offer(o, baselines) for o in offers]
+def score_offers(
+    offers: list[FlightOffer],
+    baselines: dict[str, float],
+    state: dict | None = None,
+) -> list[FlightOffer]:
+    return [score_offer(o, baselines, state) for o in offers]
 
 
 def is_rare(offer: FlightOffer) -> bool:

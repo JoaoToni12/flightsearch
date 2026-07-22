@@ -8,6 +8,7 @@ from calibration import (
     should_notify_tier,
     update_route_baselines,
 )
+from config import GOOD_DISCOUNT_PCT, RARE_DISCOUNT_PCT
 from models import FlightOffer
 
 
@@ -29,8 +30,8 @@ def _offer(price: float, dest: str = "PAR", source: str = "travelpayouts") -> Fl
 
 def test_thresholds_from_discount_pcts():
     green, yellow = compute_thresholds(4000.0)
-    assert green == round(4000.0 * 0.60, 2)
-    assert yellow == round(4000.0 * 0.75, 2)
+    assert green == round(4000.0 * (1 - RARE_DISCOUNT_PCT / 100), 2)
+    assert yellow == round(4000.0 * (1 - GOOD_DISCOUNT_PCT / 100), 2)
 
 
 def test_rare_by_discount_and_price_level():
@@ -47,6 +48,14 @@ def test_good_band():
     scored = score_offer(_offer(2800), {"SAO->PAR": 4000})
     assert is_good(scored)
     assert not is_rare(scored)
+
+
+def test_thin_history_uses_seed_floor():
+    state = {"route_baselines": {"SAO->PAR": [3740.0, 3740.0]}}
+    scored = score_offer(_offer(3740), {"SAO->PAR": 3740.0}, state)
+    # Seed 4500 > median 3740 while history < 5 → discount > 0
+    assert scored.baseline_brl >= 4500
+    assert (scored.discount_pct or 0) > 0
 
 
 def test_baseline_median_updates():
