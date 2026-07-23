@@ -1,6 +1,6 @@
 """Testes do parser de datas PT-BR e filtro de estadia."""
 
-from datetime import date
+from datetime import date, timedelta
 
 from date_parse import parse_trip_dates
 from fetchers.md_rss_fetcher import _parse_feed, candidate_to_offer
@@ -35,35 +35,38 @@ def test_parse_cross_month():
     assert ret == "2026-09-05"
 
 
+def _window_offer(dep: date, days: int, price: float = 3200) -> FlightOffer:
+    return FlightOffer(
+        price_brl=price,
+        airline="X",
+        departure_date=dep.isoformat(),
+        return_date=(dep + timedelta(days=days)).isoformat(),
+        trip_days=days,
+        duration_min=None,
+        stops=1,
+        source="t",
+        link="",
+    )
+
+
 def test_trip_window_keeps_10_days_drops_25():
-    keep = FlightOffer(
-        price_brl=3200,
-        airline="X",
-        departure_date="2026-09-01",
-        return_date="2026-09-11",
-        trip_days=10,
-        duration_min=None,
-        stops=1,
-        source="t",
-        link="",
-    )
-    drop = FlightOffer(
-        price_brl=3000,
-        airline="X",
-        departure_date="2026-07-28",
-        return_date="2026-08-22",
-        trip_days=25,
-        duration_min=None,
-        stops=1,
-        source="t",
-        link="",
-    )
+    base = date.today() + timedelta(days=40)
+    keep = _window_offer(base, 10)
+    drop = _window_offer(base, 25, price=3000)
     assert in_trip_window(keep)
     assert not in_trip_window(drop)
     kept, n = filter_trip_window([keep, drop])
     assert len(kept) == 1
     assert n == 1
     assert kept[0].price_brl == 3200
+
+
+def test_trip_window_drops_past_departure():
+    """Post antigo do arquivo MD (promo morta) não pode virar oferta."""
+    past = _window_offer(date.today() - timedelta(days=400), 10, price=1650)
+    assert not in_trip_window(past)
+    today_ok = _window_offer(date.today(), 10)
+    assert in_trip_window(today_ok)
 
 
 SAMPLE_WITH_DATES = """<?xml version="1.0" encoding="UTF-8"?>
@@ -80,7 +83,9 @@ SAMPLE_WITH_DATES = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def test_md_rss_extracts_dates_and_typed_offer():
-    cands = _parse_feed(SAMPLE_WITH_DATES, "https://example.com/feed")
+    cands = _parse_feed(
+        SAMPLE_WITH_DATES, "https://example.com/feed", today=date(2026, 7, 22)
+    )
     assert len(cands) == 1
     assert cands[0].departure_date == "2026-08-12"
     assert cands[0].return_date == "2026-08-22"

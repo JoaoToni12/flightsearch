@@ -25,12 +25,26 @@ def ensure_trip_days(offer: FlightOffer) -> int | None:
     return days
 
 
-def in_trip_window(offer: FlightOffer) -> bool:
-    """True only for RT with known stay inside [TRIP_LENGTH_MIN, TRIP_LENGTH_MAX]."""
+def _departs_in_future(offer: FlightOffer, today: date | None = None) -> bool:
+    try:
+        departure = date.fromisoformat(offer.departure_date or "")
+    except ValueError:
+        return False
+    return departure >= (today or date.today())
+
+
+def in_trip_window(offer: FlightOffer, *, today: date | None = None) -> bool:
+    """RT com estadia em [TRIP_LENGTH_MIN, TRIP_LENGTH_MAX] E partida futura.
+
+    A checagem de futuro protege contra posts antigos do arquivo MD RSS
+    virando oferta com preço morto (falso RARE + baseline envenenada).
+    """
     days = ensure_trip_days(offer)
     if days is None:
         return False
-    return TRIP_LENGTH_MIN <= days <= TRIP_LENGTH_MAX
+    if not (TRIP_LENGTH_MIN <= days <= TRIP_LENGTH_MAX):
+        return False
+    return _departs_in_future(offer, today)
 
 
 def filter_trip_window(offers: list[FlightOffer]) -> tuple[list[FlightOffer], int]:

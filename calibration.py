@@ -58,8 +58,14 @@ def _hours_since(iso_timestamp: str | None) -> float | None:
 
 
 def update_route_baselines(state: dict, offers: list[FlightOffer]) -> dict[str, float]:
-    """Append per-route scan mins; return current median baselines."""
+    """Append per-route scan mins; return current median baselines.
+
+    Deve ser chamado UMA vez por run, com o pool completo de ofertas —
+    append duplicado encurta a janela efetiva de histórico.
+    """
     history: dict = dict(state.get("route_baselines") or {})
+    last_seen: dict = dict(state.get("route_last_seen") or {})
+    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     mins = per_route_minimums(offers)
     baselines: dict[str, float] = {}
     for key, price in mins.items():
@@ -68,12 +74,14 @@ def update_route_baselines(state: dict, offers: list[FlightOffer]) -> dict[str, 
         if len(series) > BASELINE_HISTORY_MAX:
             series = series[-BASELINE_HISTORY_MAX:]
         history[key] = series
+        last_seen[key] = now_iso
         baselines[key] = round(statistics.median(series), 2)
     # Keep baselines for routes not seen this run.
     for key, series in history.items():
         if key not in baselines and series:
             baselines[key] = round(statistics.median(series), 2)
     state["route_baselines"] = history
+    state["route_last_seen"] = last_seen
     state["route_baseline_medians"] = baselines
     return baselines
 
@@ -186,16 +194,30 @@ def compute_thresholds(reference: float) -> tuple[float, float]:
     return green, yellow
 
 
-def reference_signal_from_offers(
-    offers: list[FlightOffer],
+REFERENCE_ROUTE_MAX_AGE_HOURS = 7 * 24
+
+
+def reference_signal_from_baselines(
+    state: dict,
     scan_min: float,
 ) -> tuple[float, str]:
-    route_mins = per_route_minimums(offers)
-    if not route_mins:
+    """Média das medianas persistidas por rota — estável entre runs.
+
+    Rotas sem oferta há mais de REFERENCE_ROUTE_MAX_AGE_HOURS saem da conta
+    para não puxar a referência com preço morto.
+    """
+    medians: dict = state.get("route_baseline_medians") or {}
+    last_seen: dict = state.get("route_last_seen") or {}
+    values: list[float] = []
+    for key, median in medians.items():
+        age = _hours_since(last_seen.get(key))
+        if age is not None and age > REFERENCE_ROUTE_MAX_AGE_HOURS:
+            continue
+        values.append(float(median))
+    if not values:
         return scan_min, "menor preço do scan"
-    values = list(route_mins.values())
     signal = round(sum(values) / len(values), 2)
-    return signal, f"média dos mínimos por rota ({len(route_mins)} rotas)"
+    return signal, f"média das medianas por rota ({len(values)} rotas)"
 
 
 def update_reference(
@@ -205,18 +227,18 @@ def update_reference(
     scan_min: float | None,
     source_mins: dict[str, float],
 ) -> tuple[float, str]:
-    baselines = update_route_baselines(state, offers) if offers else dict(
-        state.get("route_baseline_medians") or {}
-    )
+    """Atualiza a referência a partir das baselines já persistidas.
+
+    NÃO faz append em route_baselines — isso é responsabilidade de um único
+    update_route_baselines por run, feito pelo orquestrador.
+    """
     if scan_min is None:
         ref = float(state.get("reference_price_brl") or MARKET_REFERENCE_SEED_BRL)
         return ref, state.get("reference_basis") or "sem ofertas"
-    signal, explanation = reference_signal_from_offers(offers, scan_min)
+    signal, explanation = reference_signal_from_baselines(state, scan_min)
     state["reference_price_brl"] = round(signal, 2)
     state["reference_basis"] = explanation
     state["scan_min_brl"] = round(scan_min, 2)
     state["reference_source_mins"] = {k: round(v, 2) for k, v in source_mins.items()}
     state["reference_updated_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    if baselines:
-        state["route_baseline_medians"] = baselines
     return signal, explanation

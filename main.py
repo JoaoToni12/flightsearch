@@ -35,7 +35,12 @@ from fetchers import fetch_discovery_offers, fetch_signal_candidates
 from fetchers.md_rss_fetcher import candidate_to_offer
 from fetchers.serpapi_deals_fetcher import fetch_serpapi_deals_offers
 from fetchers.serpapi_fetcher import confirm_candidate, confirm_route
-from notifier import AlertLevel, send_status_email, send_tiered_alert
+from notifier import (
+    AlertLevel,
+    send_ops_alert,
+    send_status_email,
+    send_tiered_alert,
+)
 from ranking import top_offers
 from serpapi_budget import (
     can_spend,
@@ -136,8 +141,52 @@ def _confirm_top_discovery(
     return confirmed
 
 
+# Janela UTC em que o ops-alert de state quebrado pode ser enviado (~1 e-mail/dia).
+OPS_ALERT_UTC_HOURS = range(12, 15)
+OPS_ALERT_STALE_HOURS = 24.0
+
+
+def _persist_or_alert(state: dict, prev_updated_at: str | None) -> bool:
+    """Salva o state; em falha, restaura o sinal de incidente (exit≠0 no caller).
+
+    O soft-fail do save (GH_PAT sem scope) não pode voltar a ser silencioso:
+    foi assim que a automação passou 16 dias quebrada re-gastando cota SerpApi.
+    Runs seguem completando o trabalho, mas ficam vermelhos, e após 24h de
+    staleness um ops-alert por e-mail é enviado (1x/dia, janela UTC fixa —
+    não dá para deduplicar via state justamente porque o state não salva).
+    """
+    if save_state(state):
+        return True
+    logger.error(
+        "State NÃO persistido — próximo run pode reenviar digest/alertas e "
+        "re-gastar cota SerpApi. Corrija o secret GH_PAT (scope Variables write)."
+    )
+    staleness = _hours_since(prev_updated_at)
+    now_utc = datetime.now(timezone.utc)
+    if (
+        staleness is not None
+        and staleness >= OPS_ALERT_STALE_HOURS
+        and now_utc.hour in OPS_ALERT_UTC_HOURS
+    ):
+        send_ops_alert(
+            "⚠️ Flight Tracker: state não persiste há mais de 24h",
+            (
+                f"O save do FLIGHT_TRACKER_STATE está falhando desde "
+                f"{prev_updated_at} (~{staleness:.0f}h).\n\n"
+                "Causa típica: GH_PAT expirado ou sem permissão de Actions "
+                "Variables (read/write).\n"
+                "Enquanto isso: digests podem repetir, dedup de alertas não "
+                "funciona e a cota SerpApi pode ser re-gasta a cada run.\n\n"
+                "Fix: gerar novo fine-grained PAT com Variables read/write e "
+                "atualizar o secret GH_PAT no repo JoaoToni12/flightsearch."
+            ),
+        )
+    return False
+
+
 def run() -> int:
     state = load_state()
+    prev_updated_at = state.get("updated_at")
     ensure_budget_fields(state)
     state["run_counter"] = int(state.get("run_counter") or 0) + 1
     run_counter = state["run_counter"]
@@ -205,10 +254,12 @@ def run() -> int:
 
     live_offers, dropped_live = filter_trip_window(live_offers)
     if dropped_live:
-        logger.info("L2/L0 live: drop %d fora da janela 7–14d", dropped_live)
+        logger.info("L2/L0 live: drop %d fora da janela 7–14d ou no passado", dropped_live)
 
-    baselines = update_route_baselines(state, discovery + live_offers)
-    scored_discovery = score_offers(discovery, baselines, state)
+    # Seleção de confirms usa as medianas persistidas (append único vem depois).
+    scored_discovery = score_offers(
+        discovery, dict(state.get("route_baseline_medians") or {}), state
+    )
 
     # L2c: confirm top discovery outliers if budget remains
     remaining = remaining_day(state)
@@ -222,25 +273,23 @@ def run() -> int:
         )
         live_offers, _ = filter_trip_window(live_offers)
 
+    # Único append de baseline por run, com o pool completo (L0+L1+L2).
+    baselines = update_route_baselines(state, discovery + live_offers)
     offers = score_offers(discovery + live_offers, baselines, state)
     if not offers and not candidates:
         logger.error("Nenhuma oferta/sinal. Verifique TRAVELPAYOUTS_TOKEN / feeds MD.")
-        save_state(state)
+        _persist_or_alert(state, prev_updated_at)
         return 1
 
     if not offers:
         logger.warning("Só sinais MD sem ofertas tipadas — digest sem pool.")
-        save_state(state)
-        return 0
+        return 0 if _persist_or_alert(state, prev_updated_at) else 2
 
     scan_min = min(o.price_brl for o in offers)
     source_mins = per_source_mins(offers)
     reference, ref_basis = update_reference(
         state, offers=offers, scan_min=scan_min, source_mins=source_mins
     )
-    # Re-score with updated baselines
-    baselines = dict(state.get("route_baseline_medians") or baselines)
-    offers = score_offers(offers, baselines, state)
 
     green_target, yellow_target = compute_thresholds(reference)
     state["target_price_brl"] = green_target
@@ -363,13 +412,7 @@ def run() -> int:
                     )
                     logger.info("E-mail pulso enviado.")
 
-    saved = save_state(state)
-    if not saved:
-        logger.error(
-            "State NÃO persistido — próximo run pode reenviar digest/alertas. "
-            "Corriga o secret GH_PAT (Variables write)."
-        )
-    return 0
+    return 0 if _persist_or_alert(state, prev_updated_at) else 2
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html as html_lib
 import logging
 import os
 import smtplib
@@ -438,6 +439,16 @@ def _dispatch_email(subject: str, text: str, html: str) -> bool:
     except Exception as exc:
         logger.exception("Falha ao enviar e-mail: %s", exc)
         return False
+
+
+def send_ops_alert(subject: str, body: str) -> bool:
+    """Alerta operacional (falha de infra do tracker) — texto simples."""
+    escaped = html_lib.escape(body).replace("\n", "<br>")
+    html = (
+        '<div style="font-family:monospace;font-size:14px;line-height:1.5;">'
+        f"{escaped}</div>"
+    )
+    return _dispatch_email(subject, body, html)
 
 
 def send_tiered_alert(

@@ -14,6 +14,7 @@ from config import (
     DESTINATION_CITIES,
     MD_RSS_ENABLED,
     MD_RSS_FEEDS,
+    MD_RSS_MAX_AGE_DAYS,
     ORIGIN_AIRPORTS,
     TRIP_LENGTH_MAX,
     TRIP_LENGTH_MIN,
@@ -83,9 +84,16 @@ def _item_text(item: ET.Element, name: str) -> str:
     return ""
 
 
-def _parse_feed(xml_text: str, feed_url: str) -> list[DealCandidate]:
+def _parse_feed(
+    xml_text: str,
+    feed_url: str,
+    *,
+    today: date | None = None,
+) -> list[DealCandidate]:
     root = ET.fromstring(xml_text)
     candidates: list[DealCandidate] = []
+    skipped_old = 0
+    ref_day = today or date.today()
     channel = root.find("channel")
     items = channel.findall("item") if channel is not None else root.findall(".//item")
     for item in items:
@@ -112,6 +120,15 @@ def _parse_feed(xml_text: str, feed_url: str) -> list[DealCandidate]:
                 pub_iso = hint_date.isoformat()
             except (TypeError, ValueError, IndexError):
                 pub_iso = ""
+        # O feed /promocao serve um arquivo profundo (centenas de posts com
+        # anos de idade); promo velha é preço morto — corta na origem.
+        if (
+            MD_RSS_MAX_AGE_DAYS > 0
+            and hint_date is not None
+            and (ref_day - hint_date).days > MD_RSS_MAX_AGE_DAYS
+        ):
+            skipped_old += 1
+            continue
         dep, ret = parse_trip_dates(blob, hint_date=hint_date)
         candidates.append(
             DealCandidate(
@@ -128,7 +145,13 @@ def _parse_feed(xml_text: str, feed_url: str) -> list[DealCandidate]:
                 raw_text=blob[:2000],
             )
         )
-    logger.info("MD RSS %s: %d candidatos EU", feed_url, len(candidates))
+    logger.info(
+        "MD RSS %s: %d candidatos EU (%d antigos >%dd ignorados)",
+        feed_url,
+        len(candidates),
+        skipped_old,
+        MD_RSS_MAX_AGE_DAYS,
+    )
     return candidates
 
 

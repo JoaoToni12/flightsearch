@@ -2,8 +2,12 @@ name: Flight Tracker SAO⇄EU
 
 on:
   schedule:
-    # Hourly UTC — pair with cron-job.org workflow_dispatch for reliability.
+    # 3 janelas/hora — o scheduler do GitHub pula runs com frequência; múltiplas
+    # entradas elevam a cobertura efetiva (repo público = minutos ilimitados).
+    # Complemento opcional: cron-job.org disparando workflow_dispatch.
     - cron: "5 * * * *"
+    - cron: "25 * * * *"
+    - cron: "45 * * * *"
   workflow_dispatch:
     inputs:
       test_email:
@@ -42,11 +46,13 @@ jobs:
           TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           SERPAPI_ENABLED: ${{ vars.SERPAPI_ENABLED || 'false' }}
+          SERPAPI_PAUSED_UNTIL: ${{ vars.SERPAPI_PAUSED_UNTIL || '' }}
           SERPAPI_MONTHLY_BUDGET: ${{ vars.SERPAPI_MONTHLY_BUDGET || '250' }}
           SERPAPI_DAILY_SOFT_CAP: ${{ vars.SERPAPI_DAILY_SOFT_CAP || '8' }}
           SERPAPI_DEALS_PER_DAY: ${{ vars.SERPAPI_DEALS_PER_DAY || '2' }}
           SERPAPI_EXPLORE_ENABLED: ${{ vars.SERPAPI_EXPLORE_ENABLED || 'false' }}
           MD_RSS_ENABLED: ${{ vars.MD_RSS_ENABLED || 'true' }}
+          MD_RSS_MAX_AGE_DAYS: ${{ vars.MD_RSS_MAX_AGE_DAYS || '21' }}
 
           TRIP_TYPE: ${{ vars.TRIP_TYPE || 'roundtrip' }}
           HORIZON_MONTHS: ${{ vars.HORIZON_MONTHS || '6' }}

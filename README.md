@@ -7,9 +7,11 @@ Monitor **signal-first** de passagens **São Paulo ⇄ Europa** (ida e volta, 7�
 - Destinos: **PAR, MAD, LYS, NCE, MRS, BCN**
 - Trip: **roundtrip** (não só ida)
 - Detector: **% abaixo do baseline da rota** + sinais Melhores Destinos + Google `price_insights`
-- Budget A: SerpApi **free 250**/mês só para deals/confirm (opcional; L0/L1 rodam sem ele)
-- Janela de estadia **7–14 dias** enforced pós-fetch (descarta RT fora do produto)
-- MD RSS: parse de datas + enrich HTML leve → ofertas tipadas mesmo sem SerpApi
+- Budget A: SerpApi **free 250**/mês só para deals/confirm (opcional; L0/L1 rodam sem ele; `SERPAPI_PAUSED_UNTIL` pausa até uma data com auto-resume)
+- Janela de estadia **7–14 dias** + **partida futura** enforced pós-fetch (descarta RT fora do produto e promos mortas do arquivo MD)
+- MD RSS: parse de datas + enrich HTML leve → ofertas tipadas mesmo sem SerpApi; posts com mais de `MD_RSS_MAX_AGE_DAYS` (21) são ignorados
+- Referência de mercado: **média das medianas por rota** persistidas (estável entre runs; rotas sem oferta há 7 dias saem da conta)
+- Se o state não persistir (GH_PAT), o run completa mas sai com **exit 2** + ops-alert por e-mail após 24h
 
 ## Fontes
 

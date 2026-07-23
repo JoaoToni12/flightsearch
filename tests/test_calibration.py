@@ -1,11 +1,15 @@
 """Testes de calibração / scoring."""
 
+from datetime import datetime, timedelta, timezone
+
 from calibration import (
     compute_thresholds,
     is_good,
     is_rare,
+    reference_signal_from_baselines,
     score_offer,
     should_notify_tier,
+    update_reference,
     update_route_baselines,
 )
 from config import GOOD_DISCOUNT_PCT, RARE_DISCOUNT_PCT
@@ -63,6 +67,44 @@ def test_baseline_median_updates():
     update_route_baselines(state, [_offer(4000), _offer(3600, source="other")])
     update_route_baselines(state, [_offer(3800)])
     assert "SAO->PAR" in state["route_baseline_medians"]
+    # Um append por chamada (min da rota), com carimbo de last_seen.
+    assert state["route_baselines"]["SAO->PAR"] == [3600.0, 3800.0]
+    assert "SAO->PAR" in state["route_last_seen"]
+
+
+def test_update_reference_does_not_append_baselines():
+    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    state: dict = {
+        "route_baselines": {"SAO->PAR": [4000.0, 4100.0, 4200.0]},
+        "route_baseline_medians": {"SAO->PAR": 4100.0},
+        "route_last_seen": {"SAO->PAR": now_iso},
+    }
+    ref, basis = update_reference(
+        state, offers=[_offer(3000)], scan_min=3000.0, source_mins={"t": 3000.0}
+    )
+    assert state["route_baselines"]["SAO->PAR"] == [4000.0, 4100.0, 4200.0]
+    assert ref == 4100.0
+    assert "medianas" in basis
+
+
+def test_reference_ignores_stale_routes():
+    now = datetime.now(timezone.utc)
+    state: dict = {
+        "route_baseline_medians": {"SAO->PAR": 4000.0, "SAO->MRS": 6000.0},
+        "route_last_seen": {
+            "SAO->PAR": now.isoformat(),
+            "SAO->MRS": (now - timedelta(days=10)).isoformat(),
+        },
+    }
+    signal, basis = reference_signal_from_baselines(state, 3500.0)
+    assert signal == 4000.0
+    assert "1 rotas" in basis
+
+
+def test_reference_falls_back_to_scan_min_without_baselines():
+    signal, basis = reference_signal_from_baselines({}, 3500.0)
+    assert signal == 3500.0
+    assert basis == "menor preço do scan"
 
 
 def test_notify_break():

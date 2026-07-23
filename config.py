@@ -62,8 +62,30 @@ GOOD_MIN_BREAK_BRL = float(os.getenv("GOOD_MIN_BREAK_BRL", "60"))
 SCAN_DIGEST_HOURS = float(os.getenv("SCAN_DIGEST_HOURS", "24"))
 BASELINE_HISTORY_MAX = int(os.getenv("BASELINE_HISTORY_MAX", "24"))
 SEEN_MD_GUIDS_MAX = int(os.getenv("SEEN_MD_GUIDS_MAX", "200"))
+# Posts MD mais velhos que isso são ignorados na origem (0 = sem filtro).
+MD_RSS_MAX_AGE_DAYS = max(0, int(os.getenv("MD_RSS_MAX_AGE_DAYS", "21")))
 
-SERPAPI_ENABLED = os.getenv("SERPAPI_ENABLED", "false").lower() == "true"
+def serpapi_paused(paused_until: str, today: date | None = None) -> bool:
+    """Pausa por data (YYYY-MM-DD): True enquanto hoje < paused_until.
+
+    Permite pausar o L2 até a virada da cota mensal sem precisar lembrar de
+    religar na mão — ex.: SERPAPI_PAUSED_UNTIL=2026-08-01 após estourar 429.
+    Data inválida = sem pausa (o governor de budget segura o gasto).
+    """
+    if not paused_until:
+        return False
+    try:
+        limit = date.fromisoformat(paused_until.strip())
+    except ValueError:
+        return False
+    return (today or date.today()) < limit
+
+
+SERPAPI_PAUSED_UNTIL = os.getenv("SERPAPI_PAUSED_UNTIL", "")
+SERPAPI_ENABLED = (
+    os.getenv("SERPAPI_ENABLED", "false").lower() == "true"
+    and not serpapi_paused(SERPAPI_PAUSED_UNTIL)
+)
 TRAVELPAYOUTS_ENABLED = os.getenv("TRAVELPAYOUTS_ENABLED", "true").lower() == "true"
 MD_RSS_ENABLED = os.getenv("MD_RSS_ENABLED", "true").lower() == "true"
 
